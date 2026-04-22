@@ -1,0 +1,52 @@
+services:
+  - type: web
+    name: cv-parser-backend
+    runtime: python
+    plan: starter
+    region: oregon
+    rootDir: cv_system_output
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/v1/health
+    disk:
+      name: cv-uploads
+      mountPath: /opt/render/project/src/uploads
+      sizeGB: 1
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cv-parser-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ACCESS_TOKEN_EXPIRE_HOURS
+        value: 24
+      - key: CORS_ORIGINS
+        value: https://cv-parser-frontend.onrender.com
+      - key: UPLOAD_DIR
+        value: /opt/render/project/src/uploads
+      - key: LOG_DIR
+        value: logs
+      - key: MAX_FILE_SIZE_MB
+        value: 10
+      - key: MIN_CONFIDENCE_SCORE
+        value: 0.1
+
+  - type: web
+    name: cv-parser-frontend
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NEXT_PUBLIC_API_BASE_URL
+        value: https://cv-parser-backend.onrender.com
+
+databases:
+  - name: cv-parser-db
+    plan: basic-256mb
+    region: oregon
+    databaseName: cv_parser
+    user: cv_parser_user
