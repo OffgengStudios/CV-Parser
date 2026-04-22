@@ -138,9 +138,15 @@ export interface ApiUploadBatchResponse {
   errors: ApiUploadError[]
 }
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ||
-  "http://127.0.0.1:8000"
+function normalizeApiBaseUrl(value: string | undefined): string {
+  const baseUrl = value?.trim().replace(/\/$/, "") || "http://127.0.0.1:8000"
+  if (baseUrl.startsWith("http://") || baseUrl.startsWith("https://")) {
+    return baseUrl
+  }
+  return `https://${baseUrl}`
+}
+
+const API_BASE_URL = normalizeApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL)
 
 let accessToken: string | null = null
 const TOKEN_STORAGE_KEY = "cvparser_access_token"
