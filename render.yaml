@@ -42,7 +42,10 @@ services:
     startCommand: npm run start
     envVars:
       - key: NEXT_PUBLIC_API_BASE_URL
-        value: https://cv-parser-backend.onrender.com
+        fromService:
+          name: cv-parser-backend
+          type: web
+          property: host
 
 databases:
   - name: cv-parser-db
