@@ -1,0 +1,831 @@
+{
+  "matched_records": 22,
+  "extraction_failures": [
+    {
+      "file": "userid6746580_Cashier.pdf",
+      "error": "PDF has no pages: userid6746580_Cashier.pdf"
+    }
+  ],
+  "unmatched_label_rows": [
+    {
+      "name": "John Doe",
+      "email": "john@example.com",
+      "skills": "Python, SQL, Tableau",
+      "category": "IT",
+      "experience": "3"
+    },
+    {
+      "name": "Justice Botwe",
+      "email": "",
+      "skills": "Customer service, Sales, Stock management, Communication, Punctuality",
+      "category": "Sales / Retail",
+      "experience": "0"
+    },
+    {
+      "name": "Gladys Adjei",
+      "email": "gladysnelson93@gmail.com",
+      "skills": "Sales strategy, Visual merchandising, Customer service, Sales tracking, Professional cleaning",
+      "category": "Sales / Retail",
+      "experience": "7"
+    },
+    {
+      "name": "Josephine Gyabaah",
+      "email": "josephinegyabaah@gmail.com",
+      "skills": "Digital marketing, Social media management, Graphic design, Video editing, Sales",
+      "category": "Digital Marketing",
+      "experience": "2"
+    },
+    {
+      "name": "Gertrude Akorli",
+      "email": "gertrudeakorli178@gmail.com",
+      "skills": "Teaching, Classroom management, Customer service, Inventory management, Administrative support",
+      "category": "Education / Sales",
+      "experience": "5"
+    },
+    {
+      "name": "Jedidialla Sarfo Adjepong",
+      "email": "jedidialla2@gmail.com",
+      "skills": "Customer service, Digital marketing, Communication, Writing, Data tracking",
+      "category": "Customer Service",
+      "experience": "1"
+    },
+    {
+      "name": "Georgia Adusei",
+      "email": "gardinery966@gmail.com",
+      "skills": "Sales, Communication, Data entry, Record keeping, Microsoft Office",
+      "category": "Sales / Retail",
+      "experience": "2"
+    },
+    {
+      "name": "Loury Appoh",
+      "email": "louryappoh2000@gmail.com",
+      "skills": "Sales, Communication, Insurance",
+      "category": "Sales / Insurance",
+      "experience": "1"
+    },
+    {
+      "name": "Fawzia Akpaka",
+      "email": "akpakafawzia1@gmail.com",
+      "skills": "Report writing, MS Excel, Administrative support, Communication, Tourism industry knowledge",
+      "category": "Administration / Tourism",
+      "experience": "1"
+    },
+    {
+      "name": "Wendy Philip-Quaque",
+      "email": "nanaesikorewaah@gmail.com",
+      "skills": "Sales, Customer service, Record keeping, Software Engineering (diploma)",
+      "category": "Sales / IT",
+      "experience": "1"
+    }
+  ],
+  "metrics": {
+    "name_accuracy": 0.9545,
+    "email_accuracy": 0.9545,
+    "main_category_accuracy": 0.9545,
+    "years_experience_accuracy": 0.0909,
+    "avg_skill_overlap": 0.1104
+  },
+  "common_failure_patterns": {
+    "category_mismatches": [
+      [
+        "Finance / Accounting -> Administration & Operations",
+        1
+      ]
+    ],
+    "name_mismatches": [
+      {
+        "file": "userid6766637_ERIC BOATENG-S CV..pdf",
+        "predicted_name": "Eric Dwamena",
+        "expected_name": "Eric Dwamena Boateng"
+      }
+    ],
+    "extraction_failures": [
+      {
+        "file": "userid6746580_Cashier.pdf",
+        "error": "PDF has no pages: userid6746580_Cashier.pdf"
+      }
+    ]
+  },
+  "details": [
+    {
+      "file": "Abigail's CV.pdf",
+      "predicted": {
+        "file": "Abigail's CV.pdf",
+        "name": "Onomah Esi Abigail Calvin",
+        "email": "calvinaabigail@gmail.com",
+        "phone": "+233 55 735 3471",
+        "skills": [
+          "Communication",
+          "Microsoft Office",
+          "Social Media",
+          "Teamwork"
+        ],
+        "years_experience": null,
+        "category": "Marketing",
+        "subcategory": "Content & Social Media",
+        "confidence": 0.3529
+      },
+      "expected": {
+        "name": "Onomah Esi Abigail Calvin",
+        "email": "calvinaabigail@gmail.com",
+        "skills": "Scriptwriting, News writing, TV/Radio production, Social media management, Video editing",
+        "category": "Media / Communications",
+        "experience": "3"
+      },
+      "checks": {
+        "name": true,
+        "email": true,
+        "category": true,
+        "years_experience": false,
+        "skills_overlap_ratio": 0.0
+      }
+    },
+    {
+      "file": "ASAMOAH_KELVIN_MENSAH_CV_260303_094536.pdf",
+      "predicted": {
+        "file": "ASAMOAH_KELVIN_MENSAH_CV_260303_094536.pdf",
+        "name": "Asamoah Kelvin Mensah",
+        "email": "aivingh52@gmail.com",
+        "phone": "+233 25 660 6938",
+        "skills": [
+          "Communication",
+          "Teamwork"
+        ],
+        "years_experience": null,
+        "category": "Transport & Logistics",
+        "subcategory": "Warehouse & Inventory",
+        "confidence": 0.5
+      },
+      "expected": {
+        "name": "Asamoah Kelvin Mensah",
+        "email": "aivingh52@gmail.com",
+        "skills": "Inventory management, Record keeping, Stock management, Teamwork, Documentation",
+        "category": "Logistics / Warehouse",
+        "experience": "1"
+      },
+      "checks": {
+        "name": true,
+        "email": true,
+        "category": true,
+        "years_experience": false,
+        "skills_overlap_ratio": 0.2
+      }
+    },
+    {
+      "file": "DARLING CV (1).pdf",
+      "predicted": {
+        "file": "DARLING CV (1).pdf",
+        "name": "Darlington Francis Asare Hobbies",
+        "email": "darlintinasare24@gmail.com",
+        "phone": "+233 50 553 2293",
+        "skills": [
+          "Communication",
+          "Leadership",
+          "Problem Solving"
+        ],
+        "years_experience": null,
+        "category": "Sales",
+        "subcategory": "Retail Sales",
+        "confidence": 0.6923
+      },
+      "expected": {
+        "name": "Darlington Francis Asare",
+        "email": "darlintinasare24@gmail.com",
+        "skills": "Time management, Problem solving, Customer service, Interpersonal communication, Accounting",
+        "category": "Customer Service / Telecom",
+        "experience": "1"
+      },
+      "checks": {
+        "name": true,
+        "email": true,
+        "category": true,
+        "years_experience": false,
+        "skills_overlap_ratio": 0.2
+      }
+    },
+    {
+      "file": "Ebenezer Yankey's CV.pdf",
+      "predicted": {
+        "file": "Ebenezer Yankey's CV.pdf",
+        "name": "Ebenezer Yankey",
+        "email": "ebenezeryankey187@gmail.com",
+        "phone": "+233 54 503 1592",
+        "skills": [
+          "Communication"
+        ],
+        "years_experience": 7.0,
+        "category": "Transport & Logistics",
+        "subcategory": "Driving & Delivery",
+        "confidence": 0.4167
+      },
+      "expected": {
+        "name": "Ebenezer Yankey",
+        "email": "ebenezeryankey187@gmail.com",
+        "skills": "Defensive driving, Vehicle maintenance, Road navigation, Time management, Customer relations",
+        "category": "Transport / Driving",
+        "experience": "7"
+      },
+      "checks": {
+        "name": true,
+        "email": true,
+        "category": true,
+        "years_experience": true,
+        "skills_overlap_ratio": 0.0
+      }
+    },
+    {
+      "file": "Elizabeth Apeku - Registered Nurse (1).pdf",
+      "predicted": {
+        "file": "Elizabeth Apeku - Registered Nurse (1).pdf",
+        "name": "Elizabeth Apeku",
+        "email": "elizabethapek399@gmail.com",
+        "phone": "+233 55 770 9859",
+        "skills": [
+          "Communication"
+        ],
+        "years_experience": 13.0,
+        "category": "Healthcare",
+        "subcategory": "Nursing",
+        "confidence": 1.0
+      },
+      "expected": {
+        "name": "Elizabeth Apeku",
+        "email": "elizabethapek399@gmail.com",
+        "skills": "Patient care, Triage, Medication administration, Wound care, IV line setup",
+        "category": "Healthcare",
+        "experience": "2"
+      },
+      "checks": {
+        "name": true,
+        "email": true,
+        "category": true,
+        "years_experience": false,
+        "skills_overlap_ratio": 0.0
+      }
+    },
+    {
+      "file": "Ernest Kofi Boateng's  CV.pdf",
+      "predicted": {
+        "file": "Ernest Kofi Boateng's  CV.pdf",
+        "name": "Ernest Kofi Boateng",
+        "email": null,
+        "phone": "+233 54 044 2364",
+        "skills": [
+          "Forklift"
+        ],
+        "years_experience": null,
+        "category": "Transport & Logistics",
+        "subcategory": "Warehouse & Inventory",
+        "confidence": 0.5909
+      },
+      "expected": {
+        "name": "Ernest Kofi Boateng",
+        "email": "",
+        "skills": "Forklift operation, Safety compliance, Inventory management, Loading & Unloading, Warehouse systems",
+        "category": "Logistics / Warehouse",
+        "experience": "4"
+      },
+      "checks": {
+        "name": true,
+        "email": true,
+        "category": true,
+        "years_experience": false,
+        "skills_overlap_ratio": 0.0
+      }
+    },
+    {
+      "file": "Gideon Kwame Onomah-BSc Agricultural Biotechnology (4th year) (1).pdf",
+      "predicted": {
+        "file": "Gideon Kwame Onomah-BSc Agricultural Biotechnology (4th year) (1).pdf",
+        "name": "Gideon Kwame Onomah",
+        "email": "gideononumah01@gmail.com",
+        "phone": "+233 24 452 2306",
+        "skills": [
+          "Communication",
+          "Electrical",
+          "Excel",
+          "First Aid",
+          "Leadership",
+          "Microsoft Office",
+          "Python",
+          "R",
+          "Teamwork"
+        ],
+        "years_experience": null,
+        "category": "Agriculture",
+        "subcategory": "Agricultural Research",
+        "confidence": 0.8706
+      },
+      "expected": {
+        "name": "Gideon Kwame Onomah",
+        "email": "gideononumah01@gmail.com",
+        "skills": "DNA/RNA extraction, PCR, Plant tissue culture, Soil chemistry analysis, R, Python, Microsoft Office",
+        "category": "Agriculture / Science",
+        "experience": "1"
+      },
+      "checks": {
+        "name": true,
+        "email": true,
+        "category": true,
+        "years_experience": false,
+        "skills_overlap_ratio": 0.43
+      }
+    },
+    {
+      "file": "LAWRENCE_AYEBI-AWUAH_Resume_(1)[1].pdf",
+      "predicted": {
+        "file": "LAWRENCE_AYEBI-AWUAH_Resume_(1)[1].pdf",
+        "name": "Lawrence Ayebi-Awuah",
+        "email": "lawrenceawuah24@gmail.com",
+        "phone": "+233 54 734 8479",
+        "skills": [
+          "Communication",
+          "Excel",
+          "Microsoft Office"
+        ],
+        "years_experience": null,
+        "category": "Administration & Operations",
+        "subcategory": "Administrative Support",
+        "confidence": 0.4348
+      },
+      "expected": {
+        "name": "Lawrence Ayebi-Awuah",
+        "email": "lawrenceawuah24@gmail.com",
+        "skills": "Organizational skills, Communication, Microsoft Office 365, Team collaboration, Document management",
+        "category": "Administration",
+        "experience": "2"
+      },
+      "checks": {
+        "name": true,
+        "email": true,
+        "category": true,
+        "years_experience": false,
+        "skills_overlap_ratio": 0.2
+      }
+    },
+    {
+      "file": "Nicholas Eduafo-Collins CV.docs.pdf",
+      "predicted": {
+        "file": "Nicholas Eduafo-Collins CV.docs.pdf",
+        "name": "Nicholas Eduafo-Collins",
+        "email": "kwekucolins047@gmail.com",
+        "phone": "+233 55 719 2620",
+        "skills": [
+          "Communication",
+          "Excel",
+          "Microsoft Office",
+          "Scheduling",
+          "Word"
+        ],
+        "years_experience": 2.0,
+        "category": "Education",
+        "subcategory": "Teaching",
+        "confidence": 0.3256
+      },
+      "expected": {
+        "name": "Nicholas Eduafo-Collins",
+        "email": "kwekucolins047@gmail.com",
+        "skills": "Microsoft Office Suite, Communication, Documentation, Teaching, Agribusiness management",
+        "category": "Administration / Education",
+        "experience": "5"
+      },
+      "checks": {
+        "name": true,
+        "email": true,
+        "category": true,
+        "years_experience": false,
+        "skills_overlap_ratio": 0.2
+      }
+    },
+    {
+      "file": "Regina Ofori CV.pdf",
+      "predicted": {
+        "file": "Regina Ofori CV.pdf",
+        "name": "Regina Ofori",
+        "email": "reginareg001@gmail.com",
+        "phone": "+233 55 201 1575",
+        "skills": [
+          "Problem Solving"
+        ],
+        "years_experience": null,
+        "category": "Security & Protective Services",
+        "subcategory": "Security Guarding",
+        "confidence": 0.44
+      },
+      "expected": {
+        "name": "Regina Ofori",
+        "email": "reginareg001@gmail.com",
+        "skills": "Problem solving, Health & Safety, Interpersonal skills, Inspections, Customer service",
+        "category": "Security / Hospitality",
+        "experience": "2"
+      },
+      "checks": {
+        "name": true,
+        "email": true,
+        "category": true,
+        "years_experience": false,
+        "skills_overlap_ratio": 0.2
+      }
+    },
+    {
+      "file": "SAMUEL YEBOAH RESUME 1.pdf",
+      "predicted": {
+        "file": "SAMUEL YEBOAH RESUME 1.pdf",
+        "name": "Samuel Kofi Yeboah",
+        "email": "summy3666@gmail.com",
+        "phone": "+233 55 955 1462",
+        "skills": [
+          "Communication",
+          "Excel",
+          "Leadership",
+          "Microsoft Office",
+          "Powerpoint",
+          "Teamwork",
+          "Word"
+        ],
+        "years_experience": null,
+        "category": "Healthcare",
+        "subcategory": "Nutrition & Dietetics",
+        "confidence": 0.7347
+      },
+      "expected": {
+        "name": "Samuel Kofi Yeboah",
+        "email": "summy3666@gmail.com",
+        "skills": "Nutritional assessment, Dietary planning, Patient counselling, Microsoft Office, Food quality inspection",
+        "category": "Healthcare / Nutrition",
+        "experience": "3"
+      },
+      "checks": {
+        "name": true,
+        "email": true,
+        "category": true,
+        "years_experience": false,
+        "skills_overlap_ratio": 0.2
+      }
+    },
+    {
+      "file": "userid4580670_Richard CV 2.docx",
+      "predicted": {
+        "file": "userid4580670_Richard CV 2.docx",
+        "name": "Richard Agyekum",
+        "email": "agyekumrichardgod0552@gmail.com",
+        "phone": "+233 55 253 7404",
+        "skills": [
+          "Communication",
+          "Microsoft Office"
+        ],
+        "years_experience": 6.0,
+        "category": "Management",
+        "subcategory": "Operations Management",
+        "confidence": 0.3846
+      },
+      "expected": {
+        "name": "Richard Agyekum",
+        "email": "agyekumrichardgod0552@gmail.com",
+        "skills": "Operations management, IT asset management, Team collaboration, Microsoft Office, Technical troubleshooting",
+        "category": "IT / Operations",
+        "experience": "3"
+      },
+      "checks": {
+        "name": true,
+        "email": true,
+        "category": true,
+        "years_experience": false,
+        "skills_overlap_ratio": 0.2
+      }
+    },
+    {
+      "file": "userid5108593_Joana_Agbekomatsi_Professional_CV.pdf",
+      "predicted": {
+        "file": "userid5108593_Joana_Agbekomatsi_Professional_CV.pdf",
+        "name": "Joana Agbekomatsi",
+        "email": "joanaeyram4@gmail.com",
+        "phone": "+233 53 641 5126",
+        "skills": [
+          "Communication",
+          "Excel",
+          "Powerpoint",
+          "Problem Solving",
+          "Scheduling",
+          "Word"
+        ],
+        "years_experience": null,
+        "category": "Administration & Operations",
+        "subcategory": "Office Operations",
+        "confidence": 0.4615
+      },
+      "expected": {
+        "name": "Joana Agbekomatsi",
+        "email": "joanaeyram4@gmail.com",
+        "skills": "Customer service, Office management, Record keeping, Administrative support, Problem solving",
+        "category": "Administration / Customer Service",
+        "experience": "9"
+      },
+      "checks": {
+        "name": true,
+        "email": true,
+        "category": true,
+        "years_experience": false,
+        "skills_overlap_ratio": 0.2
+      }
+    },
+    {
+      "file": "userid5400832_WINNIE OBENG-s CV.pdf",
+      "predicted": {
+        "file": "userid5400832_WINNIE OBENG-s CV.pdf",
+        "name": "Winnie Getty Obeng",
+        "email": "adwoaaccent@gmail.com",
+        "phone": "+233 26 586 0978",
+        "skills": [
+          "Communication",
+          "Data Entry",
+          "Leadership",
+          "Microsoft Office",
+          "Scheduling"
+        ],
+        "years_experience": null,
+        "category": "Administration & Operations",
+        "subcategory": "Administrative Support",
+        "confidence": 0.6957
+      },
+      "expected": {
+        "name": "Winnie Getty Obeng",
+        "email": "adwoaaccent@gmail.com",
+        "skills": "Client relations, Data management, Executive support, Retail management, Staff supervision",
+        "category": "Administration / Management",
+        "experience": "10"
+      },
+      "checks": {
+        "name": true,
+        "email": true,
+        "category": true,
+        "years_experience": false,
+        "skills_overlap_ratio": 0.0
+      }
+    },
+    {
+      "file": "userid5659446_Hephzibah_Essuman_CV-1.pdf",
+      "predicted": {
+        "file": "userid5659446_Hephzibah_Essuman_CV-1.pdf",
+        "name": "Hephizbah Adwo Essuman",
+        "email": "hephzyemeline@gmail.com",
+        "phone": "+233 54 580 4473",
+        "skills": [
+          "Communication",
+          "Electrical",
+          "Health And Safety"
+        ],
+        "years_experience": null,
+        "category": "Healthcare",
+        "subcategory": "Psychology & Counseling",
+        "confidence": 0.459
+      },
+      "expected": {
+        "name": "Hephzibah Adwo Essuman",
+        "email": "hephzyemeline@gmail.com",
+        "skills": "Counseling, Patient records management, Health education, Teaching, Health & Safety",
+        "category": "Healthcare / Psychology",
+        "experience": "4"
+      },
+      "checks": {
+        "name": true,
+        "email": true,
+        "category": true,
+        "years_experience": false,
+        "skills_overlap_ratio": 0.0
+      }
+    },
+    {
+      "file": "userid5987136_CURRICULUM Vitae.docx",
+      "predicted": {
+        "file": "userid5987136_CURRICULUM Vitae.docx",
+        "name": "Jacqueline Tingani",
+        "email": "jacquelinetingani@gmail.com",
+        "phone": "+233 54 492 7520",
+        "skills": [
+          "Communication",
+          "Excel",
+          "Problem Solving",
+          "Teamwork"
+        ],
+        "years_experience": 5.0,
+        "category": "Business & Finance",
+        "subcategory": "Financial Analysis",
+        "confidence": 0.5897
+      },
+      "expected": {
+        "name": "Jacqueline Tingani",
+        "email": "jacquelinetingani@gmail.com",
+        "skills": "Data collection, Market research, Financial analysis, Microsoft Excel, Customer engagement",
+        "category": "Finance / Data & Research",
+        "experience": "2"
+      },
+      "checks": {
+        "name": true,
+        "email": true,
+        "category": true,
+        "years_experience": false,
+        "skills_overlap_ratio": 0.0
+      }
+    },
+    {
+      "file": "userid6674599_Aboagye-s Resume.pdf",
+      "predicted": {
+        "file": "userid6674599_Aboagye-s Resume.pdf",
+        "name": "Mercy Aboagye",
+        "email": "nyaboagyewaah@gmail.com",
+        "phone": "+233 24 467 6186",
+        "skills": [
+          "Communication",
+          "Cross-selling",
+          "Health And Safety",
+          "Leadership",
+          "Problem Solving",
+          "Upselling"
+        ],
+        "years_experience": null,
+        "category": "Arts & Media",
+        "subcategory": "Content & Journalism",
+        "confidence": 0.3881
+      },
+      "expected": {
+        "name": "Mercy Aboagye",
+        "email": "nyaboagyewaah@gmail.com",
+        "skills": "Journalism, Broadcasting, Content creation, Audio editing, Customer service",
+        "category": "Media / Communications",
+        "experience": "7"
+      },
+      "checks": {
+        "name": true,
+        "email": true,
+        "category": true,
+        "years_experience": false,
+        "skills_overlap_ratio": 0.0
+      }
+    },
+    {
+      "file": "userid6752437_Dickson Akosua CV.pdf",
+      "predicted": {
+        "file": "userid6752437_Dickson Akosua CV.pdf",
+        "name": "Akosua Dickson",
+        "email": "akosuasaniwaa@gmail.com",
+        "phone": "+233 55 182 2559",
+        "skills": [
+          "Communication",
+          "Leadership",
+          "Problem Solving"
+        ],
+        "years_experience": null,
+        "category": "Sales",
+        "subcategory": "Retail Sales",
+        "confidence": 0.6923
+      },
+      "expected": {
+        "name": "Akosua Dickson",
+        "email": "akosuasaniwaa@gmail.com",
+        "skills": "Customer service, Sales, Team collaboration, Computer literacy, Communication",
+        "category": "Sales / Retail",
+        "experience": "2"
+      },
+      "checks": {
+        "name": true,
+        "email": true,
+        "category": true,
+        "years_experience": false,
+        "skills_overlap_ratio": 0.2
+      }
+    },
+    {
+      "file": "userid6766636_George Asante_CV.pdf",
+      "predicted": {
+        "file": "userid6766636_George Asante_CV.pdf",
+        "name": "George Asante",
+        "email": "lionelasante65@gmail.com",
+        "phone": "+233 57 670 7232",
+        "skills": [
+          "Communication",
+          "Data Entry",
+          "Excel",
+          "Leadership",
+          "Microsoft Office",
+          "Powerpoint",
+          "Word"
+        ],
+        "years_experience": null,
+        "category": "Business & Finance",
+        "subcategory": "Financial Analysis",
+        "confidence": 0.4074
+      },
+      "expected": {
+        "name": "George Asante",
+        "email": "lionelasante65@gmail.com",
+        "skills": "Financial auditing, Data analysis, Microsoft Excel, AI tools, Tax compliance, SPSS",
+        "category": "Finance / Accounting",
+        "experience": "3"
+      },
+      "checks": {
+        "name": true,
+        "email": true,
+        "category": true,
+        "years_experience": false,
+        "skills_overlap_ratio": 0.0
+      }
+    },
+    {
+      "file": "userid6766637_ERIC BOATENG-S CV..pdf",
+      "predicted": {
+        "file": "userid6766637_ERIC BOATENG-S CV..pdf",
+        "name": "Eric Dwamena",
+        "email": "kwakuboateng319@gmail.com",
+        "phone": "+233 55 764 6818",
+        "skills": [
+          "Communication",
+          "Data Entry",
+          "Excel",
+          "Microsoft Office",
+          "Powerpoint",
+          "Word"
+        ],
+        "years_experience": null,
+        "category": "Administration & Operations",
+        "subcategory": "Administrative Support",
+        "confidence": 0.3519
+      },
+      "expected": {
+        "name": "Eric Dwamena Boateng",
+        "email": "kwakuboateng319@gmail.com",
+        "skills": "Microsoft Office Suite, Data entry, Inventory management, Warehouse operations, Customer service",
+        "category": "IT / Administration",
+        "experience": "3"
+      },
+      "checks": {
+        "name": false,
+        "email": true,
+        "category": true,
+        "years_experience": false,
+        "skills_overlap_ratio": 0.2
+      }
+    },
+    {
+      "file": "userid6766654_FRANCISCA ADJEI KYERE - CV-4.pdf",
+      "predicted": {
+        "file": "userid6766654_FRANCISCA ADJEI KYERE - CV-4.pdf",
+        "name": "Francisca Adjei Kyere",
+        "email": "franciscaadjeikyere@gmail.com",
+        "phone": "+233 55 731 3006",
+        "skills": [
+          "Communication"
+        ],
+        "years_experience": null,
+        "category": "Healthcare",
+        "subcategory": "Nutrition & Dietetics",
+        "confidence": 0.4889
+      },
+      "expected": {
+        "name": "Francisca Adjei Kyere",
+        "email": "franciscaadjeikyere@gmail.com",
+        "skills": "Nutritional counseling, Community outreach, Data analysis, Multilingual communication, Program development",
+        "category": "Healthcare / Nutrition",
+        "experience": "3"
+      },
+      "checks": {
+        "name": true,
+        "email": true,
+        "category": true,
+        "years_experience": false,
+        "skills_overlap_ratio": 0.0
+      }
+    },
+    {
+      "file": "userid6766657_CLINTON -CV.docx",
+      "predicted": {
+        "file": "userid6766657_CLINTON -CV.docx",
+        "name": "Clinton Tierozie",
+        "email": "clintonti1780@uds.edu.gh",
+        "phone": "+233 59 545 4064",
+        "skills": [
+          "Communication",
+          "Leadership"
+        ],
+        "years_experience": 3.0,
+        "category": "Administration & Operations",
+        "subcategory": "Administrative Support",
+        "confidence": 0.3125
+      },
+      "expected": {
+        "name": "Clinton Tierozie",
+        "email": "deryclintion7@gmail.com",
+        "skills": "Financial reporting, Budgeting, Land management, Teaching, Payroll processing",
+        "category": "Finance / Accounting",
+        "experience": "4"
+      },
+      "checks": {
+        "name": true,
+        "email": false,
+        "category": false,
+        "years_experience": true,
+        "skills_overlap_ratio": 0.0
+      }
+    }
+  ]
+}
