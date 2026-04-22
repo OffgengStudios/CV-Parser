@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "dev-key-please-change-in-production"
     ACCESS_TOKEN_EXPIRE_HOURS: int = 24
     CORS_ORIGINS: str = "http://localhost:3000"
+    CORS_ORIGIN_REGEX: Optional[str] = None
 
     # Storage
     UPLOAD_DIR: Path = Path("uploads")
