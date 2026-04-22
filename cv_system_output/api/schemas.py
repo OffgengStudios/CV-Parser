@@ -1,0 +1,225 @@
+"""
+api/schemas.py — Pydantic models for request validation and response serialization.
+
+Kept separate from ORM models to decouple API contract from database schema.
+"""
+from __future__ import annotations
+from datetime import datetime
+from typing import Optional
+from pydantic import BaseModel, EmailStr, Field, ConfigDict
+
+
+# ---------------------------------------------------------------------------
+# Candidate schemas
+# ---------------------------------------------------------------------------
+
+class SkillOut(BaseModel):
+    skill: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CandidateOut(BaseModel):
+    """Full candidate detail response."""
+    id: str
+    name: Optional[str]
+    email: Optional[str]
+    phone: Optional[str]
+    skills: list[str]
+    experience: Optional[str]
+    education: Optional[str]
+    category: Optional[str]
+    subcategory: Optional[str]
+    confidence: Optional[float] = Field(None, ge=0.0, le=1.0)
+    years_experience: Optional[float]
+    seniority_level: Optional[str]
+    source_filename: Optional[str]
+    has_cv_file: bool = False
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @classmethod
+    def from_orm_candidate(cls, candidate) -> "CandidateOut":
+        return cls(
+            id=candidate.id,
+            name=candidate.name,
+            email=candidate.email,
+            phone=candidate.phone,
+            skills=[s.skill for s in candidate.skills],
+            experience=candidate.experience,
+            education=candidate.education,
+            category=candidate.category,
+            subcategory=candidate.subcategory,
+            confidence=candidate.confidence,
+            years_experience=candidate.years_experience,
+            seniority_level=candidate.seniority_level,
+            source_filename=candidate.source_filename,
+            has_cv_file=bool(candidate.saved_upload_filename),
+            created_at=candidate.created_at,
+        )
+
+
+class CandidateListItem(BaseModel):
+    """Lightweight candidate representation for list responses."""
+    id: str
+    name: Optional[str]
+    email: Optional[str]
+    phone: Optional[str]
+    category: Optional[str]
+    subcategory: Optional[str]
+    confidence: Optional[float]
+    years_experience: Optional[float]
+    seniority_level: Optional[str]
+    skills: list[str]
+    skills_count: int
+    source_filename: Optional[str]
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CandidateListOut(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    candidates: list[CandidateListItem]
+
+
+class DuplicateCandidateGroup(BaseModel):
+    """Candidates that likely represent the same person."""
+    match_type: str
+    match_value: str
+    candidates: list[CandidateListItem]
+
+
+class DuplicateCandidateGroupsOut(BaseModel):
+    total_groups: int
+    total_candidates: int
+    groups: list[DuplicateCandidateGroup]
+
+
+# ---------------------------------------------------------------------------
+# Upload response schemas
+# ---------------------------------------------------------------------------
+
+class UploadResponse(BaseModel):
+    """Returned after a successful CV upload and processing."""
+    candidate_id: str
+    filename: str
+    name: Optional[str]
+    email: Optional[str]
+    phone: Optional[str]
+    category: str
+    subcategory: Optional[str]
+    confidence: float
+    years_experience: Optional[float]
+    seniority_level: Optional[str]
+    upload_timestamp: Optional[datetime] = None
+    skills_extracted: int
+    message: str = "CV processed successfully."
+
+
+class UploadErrorResponse(BaseModel):
+    """Returned when a CV upload fails processing."""
+    filename: str
+    error: str
+    message: str = "CV processing failed."
+
+
+class UploadBatchResponse(BaseModel):
+    total_files: int
+    success_count: int
+    failure_count: int
+    results: list[UploadResponse]
+    errors: list[UploadErrorResponse]
+    batch_summary: "BatchSummary"
+
+
+class BatchSummary(BaseModel):
+    total_cvs_processed: int
+    count_per_job_category: dict[str, int]
+    top_10_skills: list[dict[str, int | str]]
+    average_years_experience_per_category: dict[str, float]
+
+
+# ---------------------------------------------------------------------------
+# Upload log schemas
+# ---------------------------------------------------------------------------
+
+class UploadLogOut(BaseModel):
+    id: int
+    filename: str
+    status: str
+    candidate_id: Optional[str]
+    file_size_bytes: Optional[int]
+    error_message: Optional[str]
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ActivityLogOut(BaseModel):
+    id: int
+    worker: str
+    action: str
+    target_type: Optional[str]
+    target_id: Optional[str]
+    target_label: Optional[str]
+    status: str
+    details: Optional[str]
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ---------------------------------------------------------------------------
+# Health check
+# ---------------------------------------------------------------------------
+
+class HealthResponse(BaseModel):
+    status: str
+    version: str
+    database: str
+
+
+class SettingsStatusResponse(BaseModel):
+    backend_url_hint: str
+    google_sheets_configured: bool
+    google_service_account_file_present: bool
+    google_sheets_tab_name: str
+    google_sheets_spreadsheet_id: Optional[str]
+
+
+# ---------------------------------------------------------------------------
+# Matching schemas
+# ---------------------------------------------------------------------------
+
+class MatchedCandidateResult(BaseModel):
+    """Candidate result from job matching."""
+    candidate_id: str
+    name: Optional[str]
+    email: Optional[str]
+    phone: Optional[str]
+    skills: list[str]
+    category: Optional[str]
+    subcategory: Optional[str]
+    similarity_score: float = Field(ge=0.0, le=1.0)
+    skill_match_score: float = Field(ge=0.0, le=1.0)
+    final_score: float = Field(ge=0.0, le=1.0)
+    matched_skills: list[str]
+
+
+class JobMatchRequest(BaseModel):
+    """Request for job description matching."""
+    job_description: str = Field(..., min_length=50, description="Job posting text (min 50 chars)")
+    text_weight: float = Field(0.7, ge=0.0, le=1.0, description="Weight for text similarity")
+    skill_weight: float = Field(0.3, ge=0.0, le=1.0, description="Weight for skill matching")
+    limit: int = Field(10, ge=1, le=100, description="Max results to return")
+
+
+class JobMatchResponse(BaseModel):
+    """Response from job description matching."""
+    total_candidates: int
+    matched_candidates: int
+    results: list[MatchedCandidateResult]
