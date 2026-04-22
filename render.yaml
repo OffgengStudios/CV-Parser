@@ -22,7 +22,7 @@ services:
       - key: ACCESS_TOKEN_EXPIRE_HOURS
         value: 24
       - key: CORS_ORIGINS
-        value: https://cv-parser-frontend.onrender.com
+        value: https://cv-parser-frontend-bhmu.onrender.com
       - key: UPLOAD_DIR
         value: /opt/render/project/src/uploads
       - key: LOG_DIR
@@ -42,10 +42,7 @@ services:
     startCommand: npm run start
     envVars:
       - key: NEXT_PUBLIC_API_BASE_URL
-        fromService:
-          name: cv-parser-backend
-          type: web
-          property: host
+        value: https://cv-parser-backend-ggl7.onrender.com
 
 databases:
   - name: cv-parser-db
