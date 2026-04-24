@@ -169,6 +169,12 @@ const TOKEN_STORAGE_KEY = "cvparser_access_token"
 const WORKER_STORAGE_KEY = "cvparser_worker"
 const SESSION_COOKIE = "cvparser_session"
 
+/** Returns "; Secure" on HTTPS so the session cookie is accepted by the browser. */
+function secureFlag(): string {
+  if (typeof window === "undefined") return ""
+  return window.location.protocol === "https:" ? "; Secure" : ""
+}
+
 export class ApiRequestError extends Error {
   status: number
   path: string
@@ -256,7 +262,7 @@ export function logoutWorker() {
   window.localStorage.removeItem(TOKEN_STORAGE_KEY)
   window.localStorage.removeItem(WORKER_STORAGE_KEY)
   // Clear the session-presence cookie so middleware redirects immediately
-  document.cookie = `${SESSION_COOKIE}=; path=/; max-age=0; SameSite=Lax`
+  document.cookie = `${SESSION_COOKIE}=; path=/; max-age=0; SameSite=Lax${secureFlag()}`
 }
 
 /** Exchange the current token for a fresh one. Revokes the old token server-side. */
@@ -269,7 +275,7 @@ export async function refreshToken() {
     if (typeof window !== "undefined") {
       window.localStorage.setItem(TOKEN_STORAGE_KEY, data.access_token)
       const maxAge = data.expires_in ?? 86400
-      document.cookie = `${SESSION_COOKIE}=1; path=/; max-age=${maxAge}; SameSite=Lax`
+      document.cookie = `${SESSION_COOKIE}=1; path=/; max-age=${maxAge}; SameSite=Lax${secureFlag()}`
     }
     return data
   })
@@ -300,7 +306,7 @@ export async function loginWorker(username: string, password: string) {
     // Set a lightweight session-presence cookie (not the JWT) so Next.js middleware
     // can gate protected routes before client JS hydrates.
     const maxAge = data.expires_in ?? 86400
-    document.cookie = `${SESSION_COOKIE}=1; path=/; max-age=${maxAge}; SameSite=Lax`
+    document.cookie = `${SESSION_COOKIE}=1; path=/; max-age=${maxAge}; SameSite=Lax${secureFlag()}`
   }
   return data
 }
