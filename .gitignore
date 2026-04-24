@@ -33,3 +33,20 @@ cv_system_output/Secrets/
 CV-Parser-Audit-Report.docx
 CV-Parser-Audit-Report-UPDATED.docx
 .claude
+
+# Personal CV files — never commit real people's data
+*.docx
+*.pdf
+James_Osei_Mensah_CV.docx
+
+# Generated reports with extracted candidate PII
+cv_system_output/reports/
+
+# Pytest HTML report artifacts
+cv_system_output/tests/report.html
+cv_system_output/tests/*.html
+
+# One-off debug / dev scripts (not part of the application)
+cv_system_output/test_cv_dryrun.py
+cv_system_output/test_imports.py
+cv_system_output/check_db.py

@@ -18,9 +18,9 @@ services:
   # db:
   #   image: postgres:16-alpine
   #   environment:
-  #     POSTGRES_USER: cvuser
-  #     POSTGRES_PASSWORD: cvpassword
-  #     POSTGRES_DB: cv_system
+  #     POSTGRES_USER: ${POSTGRES_USER:-cvuser}
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}   # required — set in .env
+  #     POSTGRES_DB: ${POSTGRES_DB:-cv_system}
   #   volumes:
   #     - pgdata:/var/lib/postgresql/data
   #   ports:
