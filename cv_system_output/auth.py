@@ -2,15 +2,17 @@
 auth.py — JWT token generation, validation, and authentication middleware.
 
 Provides:
-- Token creation and verification
+- Token creation and verification (with per-token jti for revocation)
+- In-memory JWT denylist for logout (auto-pruned when tokens expire)
 - HTTP Bearer authentication dependency
-- Default demo credentials (for development)
+- Default demo credentials (for development, gated by ENABLE_DEMO_CREDENTIALS)
 - Production-ready structure for database lookups
 """
-import os
 import hashlib
 import hmac
+import os
 import secrets
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -20,6 +22,7 @@ from jose import JWTError, jwt
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from config import settings
 from database import crud
 from database.models import WorkerUser
 from database.session import get_db
@@ -27,10 +30,10 @@ from logger import get_logger
 
 log = get_logger(__name__)
 
-# Configuration
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-key-please-change-in-production")
+# Configuration — single source of truth via config.py / .env
+SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_HOURS = int(os.getenv("ACCESS_TOKEN_EXPIRE_HOURS", "24"))
+ACCESS_TOKEN_EXPIRE_HOURS = settings.ACCESS_TOKEN_EXPIRE_HOURS
 PASSWORD_HASH_ITERATIONS = int(os.getenv("PASSWORD_HASH_ITERATIONS", "260000"))
 
 # Demo credentials for development (in production, query database)
@@ -38,6 +41,40 @@ DEMO_USERS = {
     "admin": "admin123",
     "demo": "demo123",
 }
+
+# ---------------------------------------------------------------------------
+# JWT denylist — maps jti (JWT ID) → expiry timestamp (UTC epoch seconds).
+# Tokens are added here on logout; verify_token rejects any listed jti.
+# Entries whose expiry has passed are pruned automatically so the dict never
+# grows unboundedly even under a long-running process.
+# ---------------------------------------------------------------------------
+_token_denylist: dict[str, float] = {}
+
+
+def _prune_denylist() -> None:
+    """Remove expired entries from the denylist (called opportunistically)."""
+    now = datetime.now(timezone.utc).timestamp()
+    expired = [jti for jti, exp in _token_denylist.items() if exp <= now]
+    for jti in expired:
+        del _token_denylist[jti]
+
+
+def revoke_token(jti: str, exp_timestamp: float) -> None:
+    """
+    Add a token JTI to the denylist so it is rejected on future requests.
+
+    Args:
+        jti: The unique token ID from the JWT payload.
+        exp_timestamp: The token's expiry as a UTC epoch float (from the 'exp' claim).
+    """
+    _prune_denylist()
+    _token_denylist[jti] = exp_timestamp
+    log.debug(f"Token revoked: jti={jti}, denylist_size={len(_token_denylist)}")
+
+
+def is_token_revoked(jti: str) -> bool:
+    """Return True if the given jti has been revoked."""
+    return jti in _token_denylist
 
 
 # ============================================================================
@@ -55,6 +92,7 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     """Decoded JWT payload."""
     user_id: str | None = None
+    jti: str | None = None
     exp: datetime | None = None
 
 
@@ -72,6 +110,11 @@ class CreateWorkerUserRequest(BaseModel):
     is_admin: bool = False
 
 
+class ResetPasswordRequest(BaseModel):
+    """Admin request to reset a worker's password."""
+    new_password: str
+
+
 class WorkerUserResponse(BaseModel):
     """Worker user response without secret fields."""
     username: str
@@ -79,6 +122,7 @@ class WorkerUserResponse(BaseModel):
     is_admin: bool
     is_active: bool
     created_by: str | None = None
+    created_at: datetime | None = None
 
 
 # ============================================================================
@@ -91,11 +135,11 @@ def create_access_token(
     expires_delta: Optional[timedelta] = None,
 ) -> tuple[str, int]:
     """
-    Create a JWT access token.
+    Create a JWT access token with a unique jti claim for revocation support.
 
     Args:
         user_id: User identifier to encode in token.
-        expires_delta: Token expiration time. Defaults to 24 hours.
+        expires_delta: Token expiration time. Defaults to ACCESS_TOKEN_EXPIRE_HOURS.
 
     Returns:
         Tuple of (token_string, expires_in_seconds)
@@ -104,8 +148,10 @@ def create_access_token(
         expires_delta = timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
 
     expire = datetime.now(timezone.utc) + expires_delta
+    token_jti = str(uuid.uuid4())
     to_encode = {
         "user_id": user_id,
+        "jti": token_jti,
         "exp": expire,
         "iat": datetime.now(timezone.utc),
     }
@@ -117,23 +163,36 @@ def create_access_token(
 
 def verify_token(token: str) -> TokenData:
     """
-    Verify and decode a JWT token.
+    Verify and decode a JWT token, rejecting revoked tokens.
 
     Args:
         token: JWT token string (without "Bearer " prefix).
 
     Returns:
-        TokenData with user_id from token.
+        TokenData with user_id and jti from token.
 
     Raises:
-        JWTError: If token is invalid or expired.
+        JWTError: If token is invalid, expired, or has been revoked.
     """
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: str | None = payload.get("user_id")
+        token_jti: str | None = payload.get("jti")
+
         if user_id is None:
             raise JWTError("Missing 'user_id' in token")
-        return TokenData(user_id=user_id)
+
+        # Reject tokens that have been explicitly revoked (e.g., after logout)
+        if token_jti and is_token_revoked(token_jti):
+            raise JWTError(f"Token has been revoked (jti={token_jti})")
+
+        exp_raw = payload.get("exp")
+        exp_dt = (
+            datetime.fromtimestamp(exp_raw, tz=timezone.utc)
+            if isinstance(exp_raw, (int, float))
+            else None
+        )
+        return TokenData(user_id=user_id, jti=token_jti, exp=exp_dt)
     except JWTError as e:
         log.warning(f"Invalid token: {e}")
         raise
@@ -161,7 +220,7 @@ async def get_current_user(
         user_id from verified token.
 
     Raises:
-        HTTPException: 401 Unauthorized if token is invalid/expired.
+        HTTPException: 401 Unauthorized if token is invalid, expired, or revoked.
     """
     token = credentials.credentials
     try:
@@ -173,6 +232,31 @@ async def get_current_user(
                 headers={"WWW-Authenticate": "Bearer"},
             )
         return token_data.user_id
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+async def get_current_user_with_token_data(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> TokenData:
+    """
+    Like get_current_user but returns the full TokenData (including jti).
+    Used by the logout and refresh endpoints which need the jti for revocation.
+    """
+    token = credentials.credentials
+    try:
+        token_data = verify_token(token)
+        if token_data.user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token: missing user_id",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return token_data
     except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -255,9 +339,12 @@ def verify_credentials(username: str, password: str, db: Session | None = None) 
         if user and user.is_active and verify_password(password, user.password_hash):
             return True
 
-    # Built-in fallback credentials prevent lockout before any DB users exist.
-    if username in DEMO_USERS and DEMO_USERS[username] == password:
-        return True
+    # Built-in fallback credentials — only active when ENABLE_DEMO_CREDENTIALS=true.
+    # Use hmac.compare_digest to prevent timing side-channel attacks.
+    if settings.ENABLE_DEMO_CREDENTIALS:
+        expected = DEMO_USERS.get(username, "")
+        if expected and hmac.compare_digest(expected, password):
+            return True
 
     log.warning(f"Failed login attempt for username: {username}")
     return False

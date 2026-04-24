@@ -94,7 +94,16 @@ class TextClassifierModel:
             alpha=alpha,
         )
 
-    def predict(self, text: str) -> tuple[str, float] | None:
+    def predict(self, text: str) -> tuple[str, float, dict[str, float]] | None:
+        """
+        Classify text and return the full probability distribution.
+
+        Returns:
+            (top_category, top_confidence, all_probabilities) where
+            all_probabilities maps every trained category to its softmax
+            probability (values sum to ~1.0).
+            Returns None if the model has no categories.
+        """
         if not self.categories:
             return None
 
@@ -114,11 +123,17 @@ class TextClassifierModel:
             return None
 
         max_score = max(scores.values())
-        exp_scores = {category: math.exp(score - max_score) for category, score in scores.items()}
+        exp_scores = {cat: math.exp(s - max_score) for cat, s in scores.items()}
         total_exp = sum(exp_scores.values())
-        top_category = max(exp_scores, key=exp_scores.get)
-        confidence = exp_scores[top_category] / total_exp if total_exp > 0 else 0.0
-        return top_category, round(confidence, 4)
+
+        if total_exp <= 0:
+            return None
+
+        # Full probability distribution — every trained category gets its real value.
+        probabilities = {cat: round(v / total_exp, 4) for cat, v in exp_scores.items()}
+        top_category = max(probabilities, key=probabilities.__getitem__)
+        confidence = probabilities[top_category]
+        return top_category, confidence, probabilities
 
 
 _TRAINED_MODEL: TextClassifierModel | None = None

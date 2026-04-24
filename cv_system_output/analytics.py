@@ -7,8 +7,6 @@ from datetime import datetime, timezone
 from typing import Iterable
 
 
-CURRENT_YEAR = datetime.now(timezone.utc).year
-
 ACRONYM_SKILLS = {
     "aws": "AWS",
     "azure": "Azure",
@@ -116,10 +114,11 @@ def extract_years_of_experience(text: str | None) -> float | None:
     range_pattern = re.compile(
         r"\b((?:19|20)\d{2})\s*[-/]\s*(present|current|date|till date|to date|(?:19|20)\d{2})\b"
     )
+    current_year = datetime.now(timezone.utc).year  # computed per-call, never stale
     covered_years: set[int] = set()
     for start_text, end_text in range_pattern.findall(normalized):
         start_year = int(start_text)
-        end_year = CURRENT_YEAR if not end_text.isdigit() else int(end_text)
+        end_year = current_year if not end_text.isdigit() else int(end_text)
         if end_year < start_year:
             start_year, end_year = end_year, start_year
         for year in range(start_year, end_year + 1):
@@ -137,18 +136,25 @@ def infer_seniority_level(
     years_experience: float | None,
     title_text: str | None = None,
 ) -> str:
+    """
+    Infer seniority level from title keywords first, then fall back to
+    years of experience. Title wins because a "Senior Software Engineer"
+    with 2 years of extracted experience is still Senior by role.
+    """
     normalized_title = (title_text or "").lower()
 
+    # Title keyword check takes priority
+    for level, keywords in SENIORITY_KEYWORDS.items():
+        if any(keyword in normalized_title for keyword in keywords):
+            return level
+
+    # Fall back to years-based inference
     if years_experience is not None:
         if years_experience >= 6:
             return "Senior"
         if years_experience >= 3:
             return "Mid"
         return "Junior"
-
-    for level, keywords in SENIORITY_KEYWORDS.items():
-        if any(keyword in normalized_title for keyword in keywords):
-            return level
 
     return "Mid"
 

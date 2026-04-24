@@ -4,7 +4,7 @@ All settings are env-overridable; no hardcoded values in application code.
 """
 from pathlib import Path
 from typing import Optional
-from pydantic import ConfigDict, field_validator
+from pydantic import ConfigDict, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 APP_DIR = Path(__file__).resolve().parent
@@ -15,12 +15,19 @@ class Settings(BaseSettings):
     APP_NAME: str = "CV Parser API"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
+    TESTING: bool = False  # set to True in test environments only
 
     # Security
     SECRET_KEY: str = "dev-key-please-change-in-production"
     ACCESS_TOKEN_EXPIRE_HOURS: int = 24
     CORS_ORIGINS: str = "http://localhost:3000"
     CORS_ORIGIN_REGEX: Optional[str] = None
+
+    # Backend public URL (shown in settings page; override in production)
+    BACKEND_URL: str = "http://127.0.0.1:8000"
+
+    # Demo credentials — disabled by default in production
+    ENABLE_DEMO_CREDENTIALS: bool = False
 
     # Storage
     UPLOAD_DIR: Path = Path("uploads")
@@ -58,6 +65,24 @@ class Settings(BaseSettings):
             if normalized in {"debug", "dev", "development"}:
                 return True
         return value
+
+    @model_validator(mode="after")
+    def enforce_strong_secret_key(self) -> "Settings":
+        _dev_default = "dev-key-please-change-in-production"
+        if self.TESTING or self.DEBUG:
+            return self  # skip enforcement in test / dev environments
+        if self.SECRET_KEY == _dev_default:
+            raise ValueError(
+                "SECRET_KEY is set to the default development value. "
+                "Set a strong random SECRET_KEY in your environment before deploying. "
+                "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
+        if len(self.SECRET_KEY) < 32:
+            raise ValueError(
+                f"SECRET_KEY is too short ({len(self.SECRET_KEY)} chars). "
+                "Minimum 32 characters required for HS256 signing."
+            )
+        return self
 
     model_config = ConfigDict(
         env_file=APP_DIR / ".env",

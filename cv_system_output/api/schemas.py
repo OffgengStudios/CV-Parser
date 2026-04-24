@@ -6,7 +6,7 @@ Kept separate from ORM models to decouple API contract from database schema.
 from __future__ import annotations
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, EmailStr, Field, ConfigDict
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -216,6 +216,16 @@ class JobMatchRequest(BaseModel):
     text_weight: float = Field(0.7, ge=0.0, le=1.0, description="Weight for text similarity")
     skill_weight: float = Field(0.3, ge=0.0, le=1.0, description="Weight for skill matching")
     limit: int = Field(10, ge=1, le=100, description="Max results to return")
+
+    @model_validator(mode="after")
+    def weights_must_not_exceed_one(self) -> "JobMatchRequest":
+        total = self.text_weight + self.skill_weight
+        if total > 1.0 + 1e-9:  # small epsilon for float rounding
+            raise ValueError(
+                f"text_weight + skill_weight must be ≤ 1.0 (got {total:.4f}). "
+                "Example: text_weight=0.7, skill_weight=0.3"
+            )
+        return self
 
 
 class JobMatchResponse(BaseModel):

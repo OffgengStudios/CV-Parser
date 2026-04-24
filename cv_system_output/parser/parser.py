@@ -16,52 +16,11 @@ from typing import Optional
 import phonenumbers
 
 from logger import get_logger
+from skills_taxonomy import SKILLS as SKILLS_KEYWORDS
 
 log = get_logger(__name__)
 
-# ---------------------------------------------------------------------------
-# Skills taxonomy — extend this list as needed (loaded once at module level)
-# ---------------------------------------------------------------------------
-SKILLS_KEYWORDS: list[str] = [
-    # Programming languages
-    "python", "java", "javascript", "typescript", "c++", "c#", "golang", "ruby",
-    "php", "swift", "kotlin", "rust", "scala", "r", "matlab",
-    # Web / frontend
-    "html", "css", "react", "angular", "vue", "next.js", "nuxt", "svelte",
-    "bootstrap", "tailwind",
-    # Backend / infra
-    "node.js", "django", "flask", "fastapi", "spring", "laravel", "express",
-    "docker", "kubernetes", "terraform", "ansible", "jenkins", "ci/cd",
-    "aws", "azure", "gcp", "linux", "nginx", "apache",
-    # Databases
-    "postgresql", "mysql", "sqlite", "mongodb", "redis", "elasticsearch",
-    "dynamodb", "cassandra", "oracle", "sql server",
-    # Data / ML
-    "machine learning", "deep learning", "tensorflow", "pytorch", "keras",
-    "scikit-learn", "pandas", "numpy", "spark", "hadoop", "tableau", "power bi",
-    # Office / admin
-    "microsoft office", "excel", "word", "powerpoint", "outlook", "sharepoint",
-    "google workspace", "google docs", "google sheets", "quickbooks", "sap",
-    "sage", "xero", "data entry", "scheduling", "calendar management",
-    # Marketing
-    "seo", "sem", "google analytics", "google ads", "facebook ads", "instagram",
-    "content marketing", "email marketing", "mailchimp", "hubspot", "crm",
-    "copywriting", "brand management", "adobe creative suite", "photoshop",
-    "illustrator", "canva", "social media", "wordpress",
-    # Sales
-    "salesforce", "sales strategy", "cold calling", "lead generation",
-    "account management", "b2b", "b2c", "negotiation", "pipeline management",
-    "customer acquisition", "upselling", "cross-selling",
-    # Trade / technical
-    "plumbing", "electrical", "carpentry", "welding", "hvac", "forklift",
-    "autocad", "solidworks", "cnc", "quality control", "iso", "lean",
-    "six sigma", "health and safety", "first aid",
-    # Soft skills (broad usefulness)
-    "project management", "agile", "scrum", "jira", "confluence",
-    "communication", "leadership", "teamwork", "problem solving",
-]
-
-# Compile skill patterns once for performance
+# Compile skill patterns once for performance (uses shared taxonomy)
 _SKILL_PATTERNS = [
     (kw, re.compile(r"\b" + re.escape(kw) + r"\b", re.IGNORECASE))
     for kw in SKILLS_KEYWORDS
@@ -402,7 +361,7 @@ def _is_likely_name(line: str) -> bool:
         return False
     if any(token in normalized for token in [":", ";", "|", "/", "\\"]):
         return False
-    if "," in normalized and normalized.count(",") > 0:
+    if normalized.count(",") > 1:  # allow single comma for "Last, First" format
         return False
     if "." in normalized and " " not in normalized:
         return False

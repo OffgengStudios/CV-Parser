@@ -6,6 +6,8 @@ export interface ApiCandidateListItem {
   category: string | null
   subcategory: string | null
   confidence: number | null
+  years_experience: number | null
+  seniority_level: string | null
   skills: string[]
   skills_count: number
   source_filename: string | null
@@ -161,9 +163,9 @@ function normalizeApiBaseUrl(value: string | undefined): string {
 
 const API_BASE_URL = normalizeApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL)
 
-let accessToken: string | null = null
 const TOKEN_STORAGE_KEY = "cvparser_access_token"
 const WORKER_STORAGE_KEY = "cvparser_worker"
+const SESSION_COOKIE = "cvparser_session"
 
 export class ApiRequestError extends Error {
   status: number
@@ -212,10 +214,8 @@ export function getApiErrorMessage(error: unknown): string {
 }
 
 function getStoredToken(): string | null {
-  if (accessToken) return accessToken
   if (typeof window === "undefined") return null
-  accessToken = window.localStorage.getItem(TOKEN_STORAGE_KEY)
-  return accessToken
+  return window.localStorage.getItem(TOKEN_STORAGE_KEY)
 }
 
 export function getCurrentWorker(): string | null {
@@ -227,11 +227,50 @@ export function hasWorkerSession(): boolean {
   return Boolean(getStoredToken() && getCurrentWorker())
 }
 
+/**
+ * Clears the local session (localStorage + cookie) and fires the backend
+ * /logout endpoint to revoke the JWT denylist entry.
+ *
+ * The backend call is best-effort — even if it fails (e.g., backend offline,
+ * token already expired) the local session is still cleared so the user is
+ * effectively signed out on this device.
+ */
 export function logoutWorker() {
-  accessToken = null
   if (typeof window === "undefined") return
+
+  // Fire the server-side revocation request while we still have the token.
+  const token = window.localStorage.getItem(TOKEN_STORAGE_KEY)
+  if (token) {
+    // Best-effort: don't await, don't throw — local logout proceeds regardless.
+    fetch(`${API_BASE_URL}/api/v1/logout`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      keepalive: true, // ensures the request completes even if the page unloads
+    }).catch(() => {
+      // Silently ignore — the token's jti just won't be in the server denylist.
+    })
+  }
+
   window.localStorage.removeItem(TOKEN_STORAGE_KEY)
   window.localStorage.removeItem(WORKER_STORAGE_KEY)
+  // Clear the session-presence cookie so middleware redirects immediately
+  document.cookie = `${SESSION_COOKIE}=; path=/; max-age=0; SameSite=Lax`
+}
+
+/** Exchange the current token for a fresh one. Revokes the old token server-side. */
+export async function refreshToken() {
+  return apiFetch<{ access_token: string; expires_in: number }>(
+    "/api/v1/auth/refresh",
+    { method: "POST" },
+    { auth: true }
+  ).then((data) => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(TOKEN_STORAGE_KEY, data.access_token)
+      const maxAge = data.expires_in ?? 86400
+      document.cookie = `${SESSION_COOKIE}=1; path=/; max-age=${maxAge}; SameSite=Lax`
+    }
+    return data
+  })
 }
 
 export async function loginWorker(username: string, password: string) {
@@ -252,11 +291,14 @@ export async function loginWorker(username: string, password: string) {
     throw new ApiRequestError("/api/v1/login", response.status, await readErrorDetail(response))
   }
 
-  const data = (await response.json()) as { access_token: string }
-  accessToken = data.access_token
+  const data = (await response.json()) as { access_token: string; expires_in?: number }
   if (typeof window !== "undefined") {
     window.localStorage.setItem(TOKEN_STORAGE_KEY, data.access_token)
     window.localStorage.setItem(WORKER_STORAGE_KEY, normalizedUsername)
+    // Set a lightweight session-presence cookie (not the JWT) so Next.js middleware
+    // can gate protected routes before client JS hydrates.
+    const maxAge = data.expires_in ?? 86400
+    document.cookie = `${SESSION_COOKIE}=1; path=/; max-age=${maxAge}; SameSite=Lax`
   }
   return data
 }
@@ -267,10 +309,11 @@ async function getAccessToken(): Promise<string> {
 
   if (typeof window !== "undefined") {
     window.location.assign("/login")
-    return new Promise(() => {})
   }
-
-  throw new ApiRequestError("/api/v1/login", 401)
+  // Throw immediately so awaiting callers reach their catch/finally blocks.
+  // (Previously this returned a never-resolving Promise which silently stalled
+  // all in-flight requests and prevented error boundaries from firing.)
+  throw new ApiRequestError("/api/v1/login", 401, "Session expired — please sign in again.")
 }
 
 function getApiUrl(path: string): string {
@@ -293,6 +336,16 @@ async function apiFetch<T>(
     headers,
     cache: "no-store",
   })
+
+  if (response.status === 401 && path !== "/api/v1/login") {
+    // Token has expired or been revoked server-side. Wipe local session so
+    // subsequent navigation lands on the login page rather than hitting 401s.
+    logoutWorker()
+    if (typeof window !== "undefined") {
+      window.location.assign("/login")
+    }
+    throw new ApiRequestError(path, 401, "Session expired — please sign in again.")
+  }
 
   if (!response.ok) {
     throw new ApiRequestError(path, response.status, await readErrorDetail(response))
@@ -451,6 +504,41 @@ export async function createWorkerLogin(input: {
     },
     { auth: true }
   )
+}
+
+export async function fetchWorkerUsers() {
+  return apiFetch<ApiWorkerUser[]>("/api/v1/admin/users", undefined, { auth: true })
+}
+
+export async function deactivateWorkerUser(username: string) {
+  const response = await fetch(`${API_BASE_URL}/api/v1/admin/users/${encodeURIComponent(username)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${await getAccessToken()}` },
+  })
+  if (!response.ok) {
+    throw new ApiRequestError(`/api/v1/admin/users/${username}`, response.status, await readErrorDetail(response))
+  }
+}
+
+export async function resetWorkerPassword(username: string, newPassword: string) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/admin/users/${encodeURIComponent(username)}/reset-password`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${await getAccessToken()}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ new_password: newPassword }),
+    }
+  )
+  if (!response.ok) {
+    throw new ApiRequestError(
+      `/api/v1/admin/users/${username}/reset-password`,
+      response.status,
+      await readErrorDetail(response)
+    )
+  }
 }
 
 export async function fetchCurrentWorkerProfile() {

@@ -10,10 +10,13 @@ import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from api.routes import router
 from config import settings
 from database.session import create_tables
+from limiter import limiter
 from logger import get_logger
 
 log = get_logger(__name__)
@@ -38,6 +41,11 @@ app = FastAPI(
     ),
     lifespan=lifespan,
 )
+
+# Attach the rate limiter so @limiter.limit decorators can resolve it
+# from app.state, and register the 429 handler for exceeded limits.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Configure CORS with restricted origins
 allowed_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")

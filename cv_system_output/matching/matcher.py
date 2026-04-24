@@ -9,6 +9,7 @@ Final score = (0.7 * text_similarity) + (0.3 * skill_match)
 """
 import re
 from dataclasses import dataclass
+from threading import Lock
 from typing import Optional
 
 import numpy as np
@@ -16,8 +17,35 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 from logger import get_logger
+from skills_taxonomy import SKILLS_SET as SKILLS_DATABASE
 
 log = get_logger(__name__)
+
+# ---------------------------------------------------------------------------
+# TF-IDF matcher cache
+#
+# Fitting TF-IDF over the full candidate corpus is expensive (seconds at
+# scale). We cache the CandidateMatcher instance keyed by:
+#   (candidate_count, newest_candidate_id)
+#
+# This detects all corpus changes for this app (upload adds a candidate,
+# delete removes one). The key is derived for free from the candidate list
+# that callers already hold — no extra DB round-trip needed.
+#
+# Only one matcher is cached at a time. _cache_lock guards concurrent
+# requests that arrive simultaneously before the cache is populated.
+# ---------------------------------------------------------------------------
+_matcher_cache: dict[tuple, "CandidateMatcher"] = {}
+_cache_lock = Lock()
+
+
+def _cache_key(candidates: list[dict]) -> tuple:
+    """Derive a cache key from a candidate list (O(1))."""
+    if not candidates:
+        return (0, None)
+    # candidates are ordered newest-first by the DB query, so index 0 is the
+    # most recently created — the best single-item proxy for corpus changes.
+    return (len(candidates), candidates[0].get("candidate_id"))
 
 
 @dataclass
@@ -29,49 +57,6 @@ class MatchResult:
     skill_match_score: float
     final_score: float
     matched_skills: list[str]
-
-
-# Comprehensive skills database (expanded from parser)
-SKILLS_DATABASE = {
-    # Programming languages
-    "python", "java", "javascript", "typescript", "c++", "c#", "golang", "ruby",
-    "php", "swift", "kotlin", "rust", "scala", "r", "matlab", "perl", "erlang",
-    # Web / frontend
-    "html", "css", "react", "angular", "vue", "next.js", "nuxt", "svelte",
-    "bootstrap", "tailwind", "jquery", "webpack",
-    # Backend / infra
-    "node.js", "django", "flask", "fastapi", "spring", "laravel", "express",
-    "docker", "kubernetes", "terraform", "ansible", "jenkins", "ci/cd",
-    "aws", "azure", "gcp", "linux", "nginx", "apache", "git",
-    # Databases
-    "postgresql", "mysql", "sqlite", "mongodb", "redis", "elasticsearch",
-    "dynamodb", "cassandra", "oracle", "sql server", "mariadb",
-    # Data / ML
-    "machine learning", "deep learning", "tensorflow", "pytorch", "keras",
-    "scikit-learn", "pandas", "numpy", "spark", "hadoop", "tableau", "power bi",
-    "analytics", "data science", "nlp",
-    # Office / admin
-    "microsoft office", "excel", "word", "powerpoint", "outlook", "sharepoint",
-    "google workspace", "google docs", "google sheets", "quickbooks", "sap",
-    "sage", "xero", "data entry", "scheduling", "calendar management",
-    # Marketing
-    "seo", "sem", "google analytics", "google ads", "facebook ads", "instagram",
-    "content marketing", "email marketing", "mailchimp", "hubspot", "crm",
-    "copywriting", "brand management", "adobe creative suite", "photoshop",
-    "illustrator", "canva", "social media", "wordpress",
-    # Sales
-    "salesforce", "sales strategy", "cold calling", "lead generation",
-    "account management", "b2b", "b2c", "negotiation", "pipeline management",
-    "customer acquisition", "upselling", "cross-selling",
-    # Trade / technical
-    "plumbing", "electrical", "carpentry", "welding", "hvac", "forklift",
-    "autocad", "solidworks", "cnc", "quality control", "iso", "lean",
-    "six sigma", "health and safety", "first aid",
-    # Soft skills
-    "project management", "agile", "scrum", "jira", "confluence",
-    "communication", "leadership", "teamwork", "problem solving",
-    "presentation", "negotiation", "critical thinking",
-}
 
 
 def _extract_skills_from_text(text: str) -> set[str]:
@@ -172,10 +157,10 @@ class CandidateMatcher:
             cv_text = candidate.get("cv_text", "")
             cv_skills = _extract_skills_from_text(cv_text)
 
-            # Combine scores
+            # Combine scores — capped at 1.0 as a safety net for edge-case weight combos
             text_score = similarity_scores[idx] if similarity_scores is not None else 0.0
             skill_score = _calculate_skill_match(job_skills, cv_skills)
-            final_score = (text_weight * text_score) + (skill_weight * skill_score)
+            final_score = min(1.0, (text_weight * text_score) + (skill_weight * skill_score))
 
             # Matched skills are intersection of job and CV skills
             matched_skills = sorted(list(job_skills & cv_skills))
@@ -219,7 +204,8 @@ def match_candidates(
     skill_weight: float = 0.3,
 ) -> list[MatchResult]:
     """
-    Convenience function to match candidates against a job description.
+    Match candidates against a job description, reusing a cached TF-IDF
+    vectorizer when the candidate corpus hasn't changed.
 
     Args:
         job_description: Job posting text.
@@ -230,5 +216,20 @@ def match_candidates(
     Returns:
         Sorted list of MatchResult.
     """
-    matcher = CandidateMatcher(candidates)
+    key = _cache_key(candidates)
+
+    with _cache_lock:
+        if key not in _matcher_cache:
+            # Corpus changed (or first call) — rebuild and replace the cache.
+            # We deliberately clear before inserting so memory stays bounded.
+            _matcher_cache.clear()
+            log.info(
+                f"TF-IDF cache miss — fitting new matcher "
+                f"(candidates={key[0]}, newest_id={key[1]})"
+            )
+            _matcher_cache[key] = CandidateMatcher(candidates)
+        else:
+            log.debug(f"TF-IDF cache hit (candidates={key[0]})")
+        matcher = _matcher_cache[key]
+
     return matcher.match(job_description, text_weight, skill_weight)

@@ -29,3 +29,7 @@ cv_system_output/Secrets/
 !.env.example
 !cv_system_output/.env.example
 *.pid
+
+CV-Parser-Audit-Report.docx
+CV-Parser-Audit-Report-UPDATED.docx
+.claude

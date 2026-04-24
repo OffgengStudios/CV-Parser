@@ -67,7 +67,7 @@ export default function LoginPage() {
             </p>
           </div>
           <p className="text-xs text-primary-foreground/70">
-            Demo workers: admin/admin123 or demo/demo123
+            Contact your administrator for login credentials.
           </p>
         </section>
 

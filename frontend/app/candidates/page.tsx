@@ -6,17 +6,8 @@ import { AlertTriangle, Search, Trash2, Users, X } from "lucide-react"
 
 import { AppSidebar } from "@/components/app-sidebar"
 import { CandidateCard, type Candidate } from "@/components/candidate-card"
+import { DeleteCandidateDialog } from "@/components/delete-candidate-dialog"
 import { EmptyState } from "@/components/empty-state"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import {
@@ -244,32 +235,12 @@ export default function CandidatesPage() {
   return (
     <div className="min-h-screen bg-background">
       <AppSidebar />
-      <AlertDialog
-        open={!!pendingDelete}
-        onOpenChange={(open) => {
-          if (!open) setPendingDelete(null)
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete candidate?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingDelete
-                ? `This will permanently remove ${pendingDelete.name} from the system.`
-                : "This action cannot be undone."}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmDeleteCandidate}
-              className="bg-destructive text-white hover:bg-destructive/90"
-            >
-              {deletingId ? "Deleting..." : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DeleteCandidateDialog
+        candidate={pendingDelete}
+        deleting={!!deletingId}
+        onConfirm={confirmDeleteCandidate}
+        onCancel={() => setPendingDelete(null)}
+      />
       <main className="pt-16 lg:pl-64 lg:pt-0">
         <div className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
           <div className="mb-8">

@@ -569,18 +569,24 @@ def classify_cv(text: str, skills: list[str] | None = None) -> ClassificationRes
     if trained_model is not None:
         result = trained_model.predict(combined_text)
         if result is not None:
-            top_category, confidence = result
+            top_category, confidence, probabilities = result
             if top_category in MAIN_CATEGORIES:
                 top_subcategory = _predict_subcategory_for_category(combined_text, top_category)
                 log.info(
                     f"Trained classification: {top_category} / {top_subcategory} "
                     f"(confidence={confidence:.2%})"
                 )
+                # Populate all_scores with real probabilities for every known
+                # category. Categories the model was not trained on default to 0.0.
+                all_scores = {
+                    category: probabilities.get(category, 0.0)
+                    for category in MAIN_CATEGORIES
+                }
                 return ClassificationResult(
                     category=top_category,
                     subcategory=top_subcategory,
                     confidence=confidence,
-                    all_scores={category: (confidence if category == top_category else 0.0) for category in MAIN_CATEGORIES},
+                    all_scores=all_scores,
                     matched_keywords={category: [] for category in MAIN_CATEGORIES},
                 )
 

@@ -5,9 +5,10 @@ All DB operations live here. API layer never touches ORM models directly.
 """
 import re
 from collections import defaultdict
+from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import select, desc
+from sqlalchemy import func, select, desc
 
 from database.models import ActivityLog, Candidate, CandidateSkill, UploadLog, WhatsAppConversation, WhatsAppMessage, WhatsAppMediaUpload, WorkerUser
 from logger import get_logger
@@ -43,6 +44,41 @@ def create_worker_user(
     db.commit()
     db.refresh(user)
     log.info(f"Worker user created: username={username}, is_admin={is_admin}")
+    return user
+
+
+def list_worker_users(db: Session) -> list[WorkerUser]:
+    """Return all worker users ordered by creation date (newest first)."""
+    stmt = select(WorkerUser).order_by(desc(WorkerUser.created_at))
+    return list(db.execute(stmt).scalars().all())
+
+
+def deactivate_worker_user(db: Session, username: str) -> Optional[WorkerUser]:
+    """
+    Deactivate a worker account (soft delete — sets is_active=False).
+    Returns the updated user, or None if not found.
+    """
+    user = get_worker_user(db, username)
+    if user is None:
+        return None
+    user.is_active = False
+    db.commit()
+    db.refresh(user)
+    log.info(f"Worker user deactivated: username={username}")
+    return user
+
+
+def update_worker_password(db: Session, username: str, new_password_hash: str) -> Optional[WorkerUser]:
+    """
+    Replace a worker's password hash. Returns the user, or None if not found.
+    """
+    user = get_worker_user(db, username)
+    if user is None:
+        return None
+    user.password_hash = new_password_hash
+    db.commit()
+    db.refresh(user)
+    log.info(f"Password updated for worker: username={username}")
     return user
 
 
@@ -147,33 +183,97 @@ def find_duplicate_candidate_groups(db: Session) -> list[dict]:
     """
     Find likely duplicate candidate records.
 
-    Strong matches use normalized email or phone. This avoids fuzzy name-only
+    Strong matches use normalised email or phone. This avoids fuzzy name-only
     matches, which are too risky for automatic duplicate detection.
-    """
-    candidates = list_all_candidates(db)
-    grouped: dict[str, list[Candidate]] = defaultdict(list)
 
-    for candidate in candidates:
+    Performance strategy (I4):
+    - Email duplicates are found with a SQL GROUP BY … HAVING COUNT(*) > 1 so
+      only the duplicate rows are ever loaded (not the whole table).
+    - Phone duplicates load only (id, phone) for all candidates — tiny payload
+      compared to loading cv_text — then normalise and group in Python.
+    - Full ORM rows are fetched only for the IDs identified as duplicates.
+    """
+    # ------------------------------------------------------------------
+    # Stage 1 — Email duplicates via SQL aggregation
+    # ------------------------------------------------------------------
+    norm_email_col = func.lower(func.trim(Candidate.email))
+
+    dup_email_stmt = (
+        select(norm_email_col.label("norm_email"))
+        .where(Candidate.email.isnot(None))
+        .where(Candidate.email != "")
+        .group_by(norm_email_col)
+        .having(func.count() > 1)
+    )
+    dup_emails: set[str] = {row.norm_email for row in db.execute(dup_email_stmt)}
+
+    # ------------------------------------------------------------------
+    # Stage 2 — Phone duplicates: slim (id, phone) fetch then Python group
+    # ------------------------------------------------------------------
+    slim_phone_stmt = (
+        select(Candidate.id, Candidate.phone)
+        .where(Candidate.phone.isnot(None))
+        .where(Candidate.phone != "")
+    )
+    phone_rows = db.execute(slim_phone_stmt).all()
+
+    phone_to_ids: dict[str, list[str]] = defaultdict(list)
+    for cand_id, phone_raw in phone_rows:
+        norm = _normalize_phone(phone_raw)
+        if norm:
+            phone_to_ids[norm].append(cand_id)
+
+    dup_phone_ids: dict[str, list[str]] = {
+        norm: ids for norm, ids in phone_to_ids.items() if len(ids) >= 2
+    }
+
+    # ------------------------------------------------------------------
+    # Stage 3 — Collect the union of duplicate IDs, fetch full rows once
+    # ------------------------------------------------------------------
+    duplicate_id_set: set[str] = set()
+    for email in dup_emails:
+        rows = db.execute(
+            select(Candidate.id).where(norm_email_col == email)
+        ).scalars().all()
+        duplicate_id_set.update(rows)
+    for ids in dup_phone_ids.values():
+        duplicate_id_set.update(ids)
+
+    if not duplicate_id_set:
+        return []
+
+    full_rows_stmt = (
+        select(Candidate)
+        .where(Candidate.id.in_(duplicate_id_set))
+        .order_by(desc(Candidate.created_at))
+    )
+    candidates_by_id: dict[str, Candidate] = {
+        c.id: c for c in db.execute(full_rows_stmt).scalars().all()
+    }
+
+    # ------------------------------------------------------------------
+    # Stage 4 — Rebuild groups (same logic as before, now on a small set)
+    # ------------------------------------------------------------------
+    grouped: dict[str, list[Candidate]] = defaultdict(list)
+    for candidate in candidates_by_id.values():
         email = _normalize_email(candidate.email)
         phone = _normalize_phone(candidate.phone)
-        if email:
+        if email and email in dup_emails:
             grouped[f"email:{email}"].append(candidate)
-        if phone:
+        if phone and phone in dup_phone_ids:
             grouped[f"phone:{phone}"].append(candidate)
 
     duplicate_groups = []
     seen_group_ids: set[frozenset[str]] = set()
 
     for match_key, matches in grouped.items():
-        unique = {candidate.id: candidate for candidate in matches}
+        unique = {c.id: c for c in matches}
         if len(unique) < 2:
             continue
-
         group_ids = frozenset(unique)
         if group_ids in seen_group_ids:
             continue
         seen_group_ids.add(group_ids)
-
         match_type, match_value = match_key.split(":", 1)
         duplicate_groups.append(
             {
@@ -184,7 +284,7 @@ def find_duplicate_candidate_groups(db: Session) -> list[dict]:
         )
 
     duplicate_groups.sort(
-        key=lambda group: max(candidate.created_at for candidate in group["candidates"]),
+        key=lambda group: max(c.created_at for c in group["candidates"]),
         reverse=True,
     )
     return duplicate_groups
@@ -195,14 +295,16 @@ def select_one_candidate_stmt():
     return select(Candidate).limit(1)
 
 
-def delete_candidate(db: Session, candidate_id: str) -> bool:
+def delete_candidate(db: Session, candidate_id: str) -> Optional[str]:
+    """Delete a candidate and return their name, or None if not found."""
     candidate = db.get(Candidate, candidate_id)
     if not candidate:
-        return False
+        return None
+    name = candidate.name
     db.delete(candidate)
     db.commit()
     log.info(f"Candidate deleted: id={candidate_id}")
-    return True
+    return name or candidate_id
 
 
 # ---------------------------------------------------------------------------
@@ -284,8 +386,6 @@ def get_or_create_whatsapp_conversation(
     phone_number: str,
 ) -> WhatsAppConversation:
     """Get existing conversation or create new one."""
-    from datetime import datetime, timezone
-
     stmt = select(WhatsAppConversation).where(WhatsAppConversation.phone_number == phone_number)
     conversation = db.execute(stmt).scalar_one_or_none()
 
@@ -382,8 +482,6 @@ def update_whatsapp_conversation(
     candidate_id: Optional[str] = None,
 ) -> Optional[WhatsAppConversation]:
     """Update conversation state."""
-    from datetime import datetime, timezone
-
     conversation = db.get(WhatsAppConversation, conversation_id)
     if not conversation:
         return None

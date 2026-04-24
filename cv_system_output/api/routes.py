@@ -2,17 +2,24 @@
 api/routes.py — FastAPI route definitions.
 
 Endpoints:
-  POST   /login                     — Authenticate and get JWT token
-  POST   /api/v1/upload             — Upload and process a CV (protected)
-  GET    /api/v1/candidates         — List candidates (protected)
-  GET    /api/v1/candidates/{id}    — Get candidate detail (protected)
-  DELETE /api/v1/candidates/{id}    — Delete a candidate (protected)
-  GET    /api/v1/uploads/logs       — Audit log of all upload attempts (protected)
-  POST   /api/v1/match              — Match candidates to job (protected)
-  GET    /api/v1/health             — Health check (no auth required)
-  GET    /api/v1/settings/status    — Settings status (no auth required)
-  POST   /api/v1/whatsapp/webhook   — WhatsApp incoming messages (no auth required)
-  GET    /api/v1/whatsapp/webhook   — WhatsApp verification (no auth required)
+  POST   /api/v1/login                              — Authenticate and get JWT token
+  POST   /api/v1/logout                             — Revoke current JWT (protected)
+  POST   /api/v1/auth/refresh                       — Exchange token for a fresh one (protected)
+  GET    /api/v1/me                                 — Current worker profile (protected)
+  POST   /api/v1/admin/users                        — Create worker login (admin)
+  GET    /api/v1/admin/users                        — List all workers (admin)
+  DELETE /api/v1/admin/users/{username}             — Deactivate worker (admin)
+  POST   /api/v1/admin/users/{username}/reset-password — Reset password (admin)
+  POST   /api/v1/upload                             — Upload and process a CV (protected)
+  GET    /api/v1/candidates                         — List candidates (protected)
+  GET    /api/v1/candidates/{id}                    — Get candidate detail (protected)
+  DELETE /api/v1/candidates/{id}                    — Delete a candidate (protected)
+  GET    /api/v1/uploads/logs                       — Audit log of uploads (protected)
+  POST   /api/v1/match                              — Match candidates to job (protected)
+  GET    /api/v1/health                             — Health check (no auth required)
+  GET    /api/v1/settings/status                    — Settings status (no auth required)
+  POST   /api/v1/whatsapp/webhook                   — WhatsApp incoming messages
+  GET    /api/v1/whatsapp/webhook                   — WhatsApp verification
 """
 import json
 import uuid
@@ -25,16 +32,21 @@ from sqlalchemy.orm import Session
 
 from api.pipeline import process_cv_file, PipelineError
 from analytics import summarize_batch
+from limiter import limiter
 from auth import (
     CreateWorkerUserRequest,
     LoginRequest,
+    ResetPasswordRequest,
     Token,
+    TokenData,
     WorkerUserResponse,
     create_access_token,
     get_current_user,
+    get_current_user_with_token_data,
     hash_password,
     is_builtin_user,
     require_admin_user,
+    revoke_token,
     verify_credentials,
 )
 from classifier.classifier import MAIN_CATEGORIES
@@ -77,20 +89,19 @@ router = APIRouter(prefix="/api/v1")
 # ---------------------------------------------------------------------------
 
 @router.post("/login", response_model=Token, tags=["Authentication"])
-def login(request: LoginRequest, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def login(request: Request, body: LoginRequest, db: Session = Depends(get_db)):
     """
     Authenticate with username and password, return JWT token.
 
-    Demo credentials:
-    - username: admin, password: admin123
-    - username: demo, password: demo123
+    Rate limited to 10 attempts per minute per IP to prevent brute-force attacks.
     """
-    username = request.username.strip().lower()
-    if not verify_credentials(username, request.password, db):
-        log.warning(f"Failed login attempt for user: {request.username}")
+    username = body.username.strip().lower()
+    if not verify_credentials(username, body.password, db):
+        log.warning(f"Failed login attempt for user: {body.username}")
         crud.log_activity(
             db=db,
-            worker=username or request.username,
+            worker=username or body.username,
             action="login",
             status="failed",
             details="Invalid username or password",
@@ -194,6 +205,154 @@ def get_current_worker_profile(
         is_admin=user.is_admin,
         is_active=user.is_active,
         created_by=user.created_by,
+        created_at=user.created_at,
+    )
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, tags=["Authentication"])
+def logout(
+    db: Session = Depends(get_db),
+    token_data: TokenData = Depends(get_current_user_with_token_data),
+):
+    """
+    Revoke the current JWT so it can no longer be used.
+
+    The token is added to an in-memory denylist keyed by its `jti` claim.
+    Stale entries are pruned automatically once the token's natural expiry passes.
+    """
+    if token_data.jti and token_data.exp:
+        revoke_token(token_data.jti, token_data.exp.timestamp())
+
+    crud.log_activity(
+        db=db,
+        worker=token_data.user_id or "unknown",
+        action="logout",
+        status="success",
+    )
+    log.info(f"User '{token_data.user_id}' logged out (jti={token_data.jti})")
+    # 204 No Content — no response body needed
+
+
+@router.post("/auth/refresh", response_model=Token, tags=["Authentication"])
+def refresh_token(
+    db: Session = Depends(get_db),
+    token_data: TokenData = Depends(get_current_user_with_token_data),
+):
+    """
+    Exchange a valid (non-expired, non-revoked) token for a fresh one.
+
+    The old token is immediately revoked so it cannot be reused.
+    Use this before your token expires to extend a session without re-entering credentials.
+    """
+    # Revoke the old token so it can't be reused
+    if token_data.jti and token_data.exp:
+        revoke_token(token_data.jti, token_data.exp.timestamp())
+
+    # Issue a fresh token with the same user identity
+    new_token, expires_in = create_access_token(user_id=token_data.user_id)
+    log.info(f"Token refreshed for user '{token_data.user_id}'")
+    return Token(access_token=new_token, expires_in=expires_in)
+
+
+# ---------------------------------------------------------------------------
+# Worker management (admin only)
+# ---------------------------------------------------------------------------
+
+@router.get("/admin/users", response_model=list[WorkerUserResponse], tags=["Authentication"])
+def list_worker_users(
+    db: Session = Depends(get_db),
+    admin_user: str = Depends(require_admin_user),
+):
+    """List all worker accounts. Admin only."""
+    users = crud.list_worker_users(db)
+    return [
+        WorkerUserResponse(
+            username=u.username,
+            full_name=u.full_name,
+            is_admin=u.is_admin,
+            is_active=u.is_active,
+            created_by=u.created_by,
+            created_at=u.created_at,
+        )
+        for u in users
+    ]
+
+
+@router.delete("/admin/users/{username}", status_code=status.HTTP_204_NO_CONTENT, tags=["Authentication"])
+def deactivate_worker_user(
+    username: str,
+    db: Session = Depends(get_db),
+    admin_user: str = Depends(require_admin_user),
+):
+    """
+    Deactivate a worker account (soft delete).
+
+    The worker can no longer log in, but their activity history is preserved.
+    Built-in users (admin, demo) cannot be deactivated.
+    """
+    username = username.strip().lower()
+    if is_builtin_user(username):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Built-in accounts cannot be deactivated.",
+        )
+    if username == admin_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot deactivate your own account.",
+        )
+
+    user = crud.deactivate_worker_user(db, username)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Worker not found.")
+
+    crud.log_activity(
+        db=db,
+        worker=admin_user,
+        action="deactivate_worker",
+        target_type="worker_user",
+        target_label=username,
+        status="success",
+    )
+
+
+@router.post("/admin/users/{username}/reset-password", status_code=status.HTTP_204_NO_CONTENT, tags=["Authentication"])
+def reset_worker_password(
+    username: str,
+    request: ResetPasswordRequest,
+    db: Session = Depends(get_db),
+    admin_user: str = Depends(require_admin_user),
+):
+    """
+    Reset a worker's password. Admin only.
+
+    The new password must be at least 8 characters. The worker's existing
+    sessions remain valid until they expire or they log out — tokens are not
+    auto-revoked on password reset (add that if you need stricter security).
+    """
+    username = username.strip().lower()
+    if is_builtin_user(username):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Built-in account passwords cannot be reset via the API.",
+        )
+    if len(request.new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be at least 8 characters.",
+        )
+
+    user = crud.update_worker_password(db, username, hash_password(request.new_password))
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Worker not found.")
+
+    crud.log_activity(
+        db=db,
+        worker=admin_user,
+        action="reset_worker_password",
+        target_type="worker_user",
+        target_label=username,
+        status="success",
     )
 
 
@@ -376,24 +535,7 @@ def list_candidates(
     candidates = crud.list_candidates(db=db, category=category, limit=limit, offset=offset)
     total = crud.count_candidates(db=db, category=category)
 
-    items = [
-        CandidateListItem(
-            id=c.id,
-            name=c.name,
-            email=c.email,
-            phone=c.phone,
-            category=c.category,
-            subcategory=c.subcategory,
-            confidence=c.confidence,
-            years_experience=c.years_experience,
-            seniority_level=c.seniority_level,
-            skills=[skill.skill for skill in c.skills],
-            skills_count=len(c.skills),
-            source_filename=c.source_filename,
-            created_at=c.created_at,
-        )
-        for c in candidates
-    ]
+    items = [_candidate_list_item(c) for c in candidates]
 
     return CandidateListOut(total=total, limit=limit, offset=offset, candidates=items)
 
@@ -530,9 +672,8 @@ def delete_candidate(
     current_user: str = Depends(get_current_user),
 ):
     """Permanently delete a candidate and their skills."""
-    candidate = crud.get_candidate(db=db, candidate_id=candidate_id)
-    deleted = crud.delete_candidate(db=db, candidate_id=candidate_id)
-    if not deleted:
+    deleted_name = crud.delete_candidate(db=db, candidate_id=candidate_id)
+    if deleted_name is None:
         crud.log_activity(
             db=db,
             worker=current_user,
@@ -552,7 +693,7 @@ def delete_candidate(
         action="delete_candidate",
         target_type="candidate",
         target_id=candidate_id,
-        target_label=candidate.name if candidate else candidate_id,
+        target_label=deleted_name,
         status="success",
     )
     try:
@@ -600,6 +741,9 @@ def match_job(
             results=[],
         )
 
+    # Build a dict for O(1) enrichment lookups later (avoids O(N) scan per result)
+    candidates_by_id = {c.id: c for c in all_candidates_orm}
+
     # Convert ORM objects to dicts for matching engine
     candidates_for_matching = [
         {
@@ -610,7 +754,7 @@ def match_job(
         for c in all_candidates_orm
     ]
 
-    # Run matching
+    # Run matching (TF-IDF vectorizer is cached across requests for the same corpus)
     match_results = match_candidates(
         job_description=request.job_description,
         candidates=candidates_for_matching,
@@ -624,11 +768,7 @@ def match_job(
     # Enrich with additional candidate data and convert to response schema
     response_results = []
     for match_result in limited_results:
-        # Find original candidate for additional fields
-        candidate_orm = next(
-            (c for c in all_candidates_orm if c.id == match_result.candidate_id),
-            None,
-        )
+        candidate_orm = candidates_by_id.get(match_result.candidate_id)
         if candidate_orm:
             skills = [s.skill for s in candidate_orm.skills]
             response_results.append(
@@ -707,6 +847,17 @@ async def match_job_file(
         if saved_path.exists():
             saved_path.unlink()
 
+    result = match_job(
+        JobMatchRequest(
+            job_description=job_description,
+            text_weight=text_weight,
+            skill_weight=skill_weight,
+            limit=limit,
+        ),
+        db=db,
+        current_user=current_user,
+    )
+
     crud.log_activity(
         db=db,
         worker=current_user,
@@ -717,16 +868,7 @@ async def match_job_file(
         details="Job description file extracted and matched",
     )
 
-    return match_job(
-        JobMatchRequest(
-            job_description=job_description,
-            text_weight=text_weight,
-            skill_weight=skill_weight,
-            limit=limit,
-        ),
-        db=db,
-        current_user=current_user,
-    )
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -762,7 +904,7 @@ def get_settings_status():
     spreadsheet_id = settings.GOOGLE_SHEETS_SPREADSHEET_ID
 
     return SettingsStatusResponse(
-        backend_url_hint="http://127.0.0.1:8000",
+        backend_url_hint=settings.BACKEND_URL,
         google_sheets_configured=bool(credentials_path and spreadsheet_id),
         google_service_account_file_present=bool(
             credentials_path and credentials_path.exists()
