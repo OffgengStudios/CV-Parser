@@ -79,6 +79,8 @@ class WorkerUserResponse(BaseModel):
     is_admin: bool
     is_active: bool
     created_by: str | None = None
+    temporary_password: str | None = None
+    created_at: datetime | None = None
 
 
 # ============================================================================
