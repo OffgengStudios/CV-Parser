@@ -91,6 +91,15 @@ def _ensure_runtime_schema() -> None:
                 "ALTER TABLE upload_logs ADD COLUMN saved_upload_filename VARCHAR(255)"
             )
 
+    if "worker_users" in inspector.get_table_names():
+        worker_user_columns = {
+            column["name"] for column in inspector.get_columns("worker_users")
+        }
+        if "temporary_password" not in worker_user_columns:
+            ddl_statements.append(
+                "ALTER TABLE worker_users ADD COLUMN temporary_password VARCHAR(255)"
+            )
+
     if not ddl_statements:
         return
 
