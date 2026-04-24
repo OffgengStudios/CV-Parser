@@ -31,6 +31,7 @@ export default function SettingsPage() {
   const [newUsername, setNewUsername] = useState("")
   const [newFullName, setNewFullName] = useState("")
   const [newPassword, setNewPassword] = useState("")
+  const [showNewPassword, setShowNewPassword] = useState(false)
   const [newIsAdmin, setNewIsAdmin] = useState(false)
   const [creatingWorker, setCreatingWorker] = useState(false)
   const [workerLogins, setWorkerLogins] = useState<ApiWorkerUser[]>([])
@@ -185,15 +186,32 @@ export default function SettingsPage() {
 
                   <div className="grid gap-2">
                     <Label htmlFor="new-worker-password">Temporary password</Label>
-                    <Input
-                      id="new-worker-password"
-                      type="password"
-                      value={newPassword}
-                      onChange={(event) => setNewPassword(event.target.value)}
-                      autoComplete="new-password"
-                      required
-                      minLength={8}
-                    />
+                    <div className="relative">
+                      <Input
+                        id="new-worker-password"
+                        type={showNewPassword ? "text" : "password"}
+                        value={newPassword}
+                        onChange={(event) => setNewPassword(event.target.value)}
+                        autoComplete="new-password"
+                        required
+                        minLength={8}
+                        className="pr-11"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setShowNewPassword((current) => !current)}
+                        className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2"
+                        title={showNewPassword ? "Hide password" : "Show password"}
+                      >
+                        {showNewPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
 
                   <div className="flex items-center justify-between gap-4 rounded-lg border border-border px-4 py-3">
