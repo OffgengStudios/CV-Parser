@@ -91,6 +91,8 @@ export interface ApiWorkerUser {
   is_admin: boolean
   is_active: boolean
   created_by: string | null
+  temporary_password?: string | null
+  created_at?: string | null
 }
 
 export interface ApiMatchedCandidate {
@@ -510,6 +512,9 @@ export async function fetchWorkerUsers() {
   return apiFetch<ApiWorkerUser[]>("/api/v1/admin/users", undefined, { auth: true })
 }
 
+/** Alias kept for backward compatibility with the settings page. */
+export const fetchWorkerLogins = fetchWorkerUsers
+
 export async function deactivateWorkerUser(username: string) {
   const response = await fetch(`${API_BASE_URL}/api/v1/admin/users/${encodeURIComponent(username)}`, {
     method: "DELETE",
@@ -540,6 +545,7 @@ export async function resetWorkerPassword(username: string, newPassword: string)
     )
   }
 }
+
 
 export async function fetchCurrentWorkerProfile() {
   return apiFetch<ApiWorkerUser>("/api/v1/me", undefined, { auth: true })

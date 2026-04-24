@@ -152,6 +152,7 @@ def create_worker_login(
         db=db,
         username=username,
         password_hash=hash_password(request.password),
+        temporary_password=request.password,
         full_name=full_name,
         is_admin=request.is_admin,
         created_by=admin_user,
@@ -171,7 +172,38 @@ def create_worker_login(
         is_admin=user.is_admin,
         is_active=user.is_active,
         created_by=user.created_by,
+        temporary_password=user.temporary_password,
+        created_at=user.created_at,
     )
+
+
+@router.get("/admin/users", response_model=list[WorkerUserResponse], tags=["Authentication"])
+def list_worker_logins(
+    db: Session = Depends(get_db),
+    admin_user: str = Depends(require_admin_user),
+):
+    """List worker logins and stored temporary passwords. Only admins can view this."""
+    users = crud.list_worker_users(db)
+    crud.log_activity(
+        db=db,
+        worker=admin_user,
+        action="view_worker_logins",
+        target_type="worker_user",
+        status="success",
+        details="Admin user viewed worker logins",
+    )
+    return [
+        WorkerUserResponse(
+            username=user.username,
+            full_name=user.full_name,
+            is_admin=user.is_admin,
+            is_active=user.is_active,
+            created_by=user.created_by,
+            temporary_password=user.temporary_password,
+            created_at=user.created_at,
+        )
+        for user in users
+    ]
 
 
 @router.get("/me", response_model=WorkerUserResponse, tags=["Authentication"])
