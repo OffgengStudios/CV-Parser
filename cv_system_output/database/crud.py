@@ -28,6 +28,7 @@ def create_worker_user(
     db: Session,
     username: str,
     password_hash: str,
+    temporary_password: Optional[str] = None,
     full_name: Optional[str] = None,
     is_admin: bool = False,
     created_by: Optional[str] = None,
@@ -35,6 +36,7 @@ def create_worker_user(
     user = WorkerUser(
         username=username,
         password_hash=password_hash,
+        temporary_password=temporary_password,
         full_name=full_name,
         is_admin=is_admin,
         created_by=created_by,
@@ -44,6 +46,11 @@ def create_worker_user(
     db.refresh(user)
     log.info(f"Worker user created: username={username}, is_admin={is_admin}")
     return user
+
+
+def list_worker_users(db: Session) -> list[WorkerUser]:
+    stmt = select(WorkerUser).order_by(desc(WorkerUser.created_at))
+    return list(db.execute(stmt).scalars().all())
 
 
 # ---------------------------------------------------------------------------

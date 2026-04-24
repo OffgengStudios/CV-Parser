@@ -1,7 +1,7 @@
 "use client"
 
-import { FormEvent, useEffect, useState } from "react"
-import { CheckCircle2, Database, Link2, RefreshCcw, Sheet, ShieldCheck, UserPlus, XCircle } from "lucide-react"
+import { FormEvent, useCallback, useEffect, useState } from "react"
+import { CheckCircle2, Copy, Database, Eye, EyeOff, Link2, RefreshCcw, Sheet, ShieldCheck, UserPlus, Users, XCircle } from "lucide-react"
 
 import { AppSidebar } from "@/components/app-sidebar"
 import { Button } from "@/components/ui/button"
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { useToast } from "@/hooks/use-toast"
-import { createWorkerLogin, fetchCurrentWorkerProfile, fetchHealth, fetchSettingsStatus, getApiErrorMessage } from "@/lib/api"
+import { createWorkerLogin, fetchCurrentWorkerProfile, fetchHealth, fetchSettingsStatus, fetchWorkerLogins, getApiErrorMessage, type ApiWorkerUser } from "@/lib/api"
 
 const backendUrl =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000"
@@ -33,6 +33,34 @@ export default function SettingsPage() {
   const [newPassword, setNewPassword] = useState("")
   const [newIsAdmin, setNewIsAdmin] = useState(false)
   const [creatingWorker, setCreatingWorker] = useState(false)
+  const [workerLogins, setWorkerLogins] = useState<ApiWorkerUser[]>([])
+  const [loadingWorkerLogins, setLoadingWorkerLogins] = useState(false)
+  const [visiblePasswords, setVisiblePasswords] = useState<string[]>([])
+
+  const statusIcon = health?.status === "ok" ? (
+    <CheckCircle2 className="h-5 w-5 text-success" />
+  ) : (
+    <XCircle className="h-5 w-5 text-destructive" />
+  )
+
+  function reloadFrontend() {
+    window.location.reload()
+  }
+
+  const loadWorkerLogins = useCallback(async () => {
+    setLoadingWorkerLogins(true)
+    try {
+      setWorkerLogins(await fetchWorkerLogins())
+    } catch (error) {
+      toast({
+        title: "Could not load logins",
+        description: getApiErrorMessage(error),
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingWorkerLogins(false)
+    }
+  }, [toast])
 
   useEffect(() => {
     async function load() {
@@ -48,6 +76,9 @@ export default function SettingsPage() {
         })
         setSettings(settingsResponse)
         setIsCurrentAdmin(workerProfile.is_admin)
+        if (workerProfile.is_admin) {
+          loadWorkerLogins()
+        }
       } catch {
         setHealth({
           status: "offline",
@@ -57,16 +88,23 @@ export default function SettingsPage() {
     }
 
     load()
-  }, [])
+  }, [loadWorkerLogins])
 
-  const statusIcon = health?.status === "ok" ? (
-    <CheckCircle2 className="h-5 w-5 text-success" />
-  ) : (
-    <XCircle className="h-5 w-5 text-destructive" />
-  )
+  function togglePassword(username: string) {
+    setVisiblePasswords((current) =>
+      current.includes(username)
+        ? current.filter((item) => item !== username)
+        : [...current, username]
+    )
+  }
 
-  function reloadFrontend() {
-    window.location.reload()
+  async function copyPassword(username: string, password: string | null | undefined) {
+    if (!password) return
+    await navigator.clipboard.writeText(password)
+    toast({
+      title: "Password copied",
+      description: `${username}'s password is ready to paste.`,
+    })
   }
 
   async function handleCreateWorker(event: FormEvent<HTMLFormElement>) {
@@ -88,6 +126,7 @@ export default function SettingsPage() {
       setNewFullName("")
       setNewPassword("")
       setNewIsAdmin(false)
+      await loadWorkerLogins()
     } catch (error) {
       toast({
         title: "Could not create login",
@@ -181,6 +220,127 @@ export default function SettingsPage() {
                     </Button>
                   </div>
                 </form>
+              </section>
+            )}
+
+            {isCurrentAdmin && (
+              <section className="rounded-lg border border-border bg-card p-6">
+                <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-3">
+                    <Users className="h-5 w-5 text-primary" />
+                    <h2 className="text-lg font-semibold text-card-foreground">
+                      Created Logins
+                    </h2>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={loadWorkerLogins}
+                    disabled={loadingWorkerLogins}
+                    className="shrink-0 gap-2"
+                  >
+                    <RefreshCcw className="h-4 w-4" />
+                    {loadingWorkerLogins ? "Loading..." : "Refresh"}
+                  </Button>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[720px] text-sm">
+                    <thead>
+                      <tr className="border-b border-border text-left text-muted-foreground">
+                        <th className="py-3 pr-4 font-medium">Username</th>
+                        <th className="py-3 pr-4 font-medium">Name</th>
+                        <th className="py-3 pr-4 font-medium">Password</th>
+                        <th className="py-3 pr-4 font-medium">Role</th>
+                        <th className="py-3 pr-4 font-medium">Created by</th>
+                        <th className="py-3 font-medium">Created</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {workerLogins.map((worker) => {
+                        const canViewPassword = Boolean(worker.temporary_password)
+                        const isPasswordVisible = visiblePasswords.includes(worker.username)
+                        const passwordText = canViewPassword
+                          ? isPasswordVisible
+                            ? worker.temporary_password
+                            : "********"
+                          : "Hashed only"
+
+                        return (
+                          <tr key={worker.username} className="border-b border-border last:border-0">
+                            <td className="py-3 pr-4 font-medium text-card-foreground">
+                              {worker.username}
+                              {!worker.is_active && (
+                                <span className="ml-2 rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                                  inactive
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 pr-4 text-muted-foreground">
+                              {worker.full_name || "-"}
+                            </td>
+                            <td className="py-3 pr-4">
+                              <div className="flex items-center gap-2">
+                                <span className="min-w-24 font-mono text-card-foreground">
+                                  {passwordText}
+                                </span>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => togglePassword(worker.username)}
+                                  disabled={!canViewPassword}
+                                  title={isPasswordVisible ? "Hide password" : "Show password"}
+                                >
+                                  {isPasswordVisible ? (
+                                    <EyeOff className="h-4 w-4" />
+                                  ) : (
+                                    <Eye className="h-4 w-4" />
+                                  )}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => copyPassword(worker.username, worker.temporary_password)}
+                                  disabled={!canViewPassword}
+                                  title="Copy password"
+                                >
+                                  <Copy className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </td>
+                            <td className="py-3 pr-4 text-muted-foreground">
+                              {worker.is_admin ? "Admin" : "Worker"}
+                            </td>
+                            <td className="py-3 pr-4 text-muted-foreground">
+                              {worker.created_by || "-"}
+                            </td>
+                            <td className="py-3 text-muted-foreground">
+                              {worker.created_at
+                                ? new Date(worker.created_at).toLocaleDateString()
+                                : "-"}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                      {!loadingWorkerLogins && workerLogins.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="py-6 text-center text-muted-foreground">
+                            No worker logins have been created yet.
+                          </td>
+                        </tr>
+                      )}
+                      {loadingWorkerLogins && (
+                        <tr>
+                          <td colSpan={6} className="py-6 text-center text-muted-foreground">
+                            Loading logins...
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </section>
             )}
 
