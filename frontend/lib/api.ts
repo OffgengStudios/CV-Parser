@@ -89,6 +89,8 @@ export interface ApiWorkerUser {
   is_admin: boolean
   is_active: boolean
   created_by: string | null
+  temporary_password?: string | null
+  created_at?: string | null
 }
 
 export interface ApiMatchedCandidate {
@@ -451,6 +453,10 @@ export async function createWorkerLogin(input: {
     },
     { auth: true }
   )
+}
+
+export async function fetchWorkerLogins() {
+  return apiFetch<ApiWorkerUser[]>("/api/v1/admin/users", undefined, { auth: true })
 }
 
 export async function fetchCurrentWorkerProfile() {
