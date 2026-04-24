@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { FileText, Lock, User } from "lucide-react"
+import { Eye, EyeOff, FileText, Lock, User } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,6 +15,7 @@ export default function LoginPage() {
   const { toast } = useToast()
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
@@ -110,13 +111,27 @@ export default function LoginPage() {
                   <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     id="password"
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
-                    className="pl-9"
+                    className="pl-9 pr-11"
                     autoComplete="current-password"
                     required
                   />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowPassword((current) => !current)}
+                    className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2"
+                    title={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </Button>
                 </div>
               </div>
 
