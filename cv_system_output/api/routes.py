@@ -1085,9 +1085,9 @@ def get_activity_logs(
     limit: int = Query(100, ge=1, le=500),
     worker: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    current_user: str = Depends(get_current_user),
+    admin_user: str = Depends(require_admin_user),
 ):
-    """Return worker activity logs."""
+    """Return worker activity logs. Admin only."""
     logs = crud.list_activity_logs(db=db, limit=limit, worker=worker)
     return [ActivityLogOut.model_validate(entry) for entry in logs]
 

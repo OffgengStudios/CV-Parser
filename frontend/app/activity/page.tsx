@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
 import {
   fetchActivityLogs,
+  fetchCurrentWorkerProfile,
   getApiErrorMessage,
   type ApiActivityLog,
 } from "@/lib/api"
@@ -24,12 +25,21 @@ export default function ActivityPage() {
   const { toast } = useToast()
   const [logs, setLogs] = useState<ApiActivityLog[]>([])
   const [loading, setLoading] = useState(true)
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [checkedAdmin, setCheckedAdmin] = useState(false)
   const [query, setQuery] = useState("")
 
   useEffect(() => {
     async function loadLogs() {
       setLoading(true)
       try {
+        const profile = await fetchCurrentWorkerProfile()
+        setIsAdmin(profile.is_admin)
+        setCheckedAdmin(true)
+        if (!profile.is_admin) {
+          setLogs([])
+          return
+        }
         setLogs(await fetchActivityLogs(200))
       } catch (error) {
         toast({
@@ -39,6 +49,7 @@ export default function ActivityPage() {
         })
       } finally {
         setLoading(false)
+        setCheckedAdmin(true)
       }
     }
 
@@ -89,6 +100,11 @@ export default function ActivityPage() {
             </div>
           </div>
 
+          {!loading && checkedAdmin && !isAdmin ? (
+            <div className="rounded-lg border border-border bg-card p-5 text-sm text-muted-foreground">
+              Worker logs are only available to admins.
+            </div>
+          ) : (
           <div className="rounded-lg border border-border bg-card">
             <div className="flex items-center justify-between border-b border-border p-5">
               <div className="flex items-center gap-2">
@@ -162,6 +178,7 @@ export default function ActivityPage() {
               </div>
             )}
           </div>
+          )}
         </div>
       </main>
     </div>

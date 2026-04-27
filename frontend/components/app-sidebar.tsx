@@ -17,7 +17,7 @@ import {
   X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { getCurrentWorker, hasWorkerSession, logoutWorker } from "@/lib/api"
+import { fetchCurrentWorkerProfile, getCurrentWorker, hasWorkerSession, logoutWorker } from "@/lib/api"
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -40,6 +40,7 @@ export function AppSidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
   const worker = useSyncExternalStore(
     subscribeToWorkerSession,
     getCurrentWorker,
@@ -52,6 +53,21 @@ export function AppSidebar() {
       return
     }
   }, [router])
+
+  useEffect(() => {
+    async function loadWorkerProfile() {
+      try {
+        const profile = await fetchCurrentWorkerProfile()
+        setIsAdmin(profile.is_admin)
+      } catch {
+        setIsAdmin(false)
+      }
+    }
+
+    if (hasWorkerSession()) {
+      loadWorkerProfile()
+    }
+  }, [worker])
 
   function handleLogout() {
     logoutWorker()
@@ -71,7 +87,9 @@ export function AppSidebar() {
         </div>
         <nav className="flex-1 px-3 py-4">
           <ul className="flex flex-col gap-1">
-            {navigation.map((item) => {
+            {navigation
+              .filter((item) => item.href !== "/activity" || isAdmin)
+              .map((item) => {
               const isActive =
                 item.href === "/"
                   ? pathname === "/"
