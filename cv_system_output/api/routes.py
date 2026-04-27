@@ -23,6 +23,7 @@ Endpoints:
 """
 import json
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -54,6 +55,7 @@ from classifier.classifier import MAIN_CATEGORIES, TAXONOMY
 from matching import match_candidates
 from api.schemas import (
     ActivityLogOut,
+    ActiveWorkersResponse,
     BatchSummary,
     CandidateCorrectionOut,
     CandidateListItem,
@@ -90,6 +92,20 @@ from parser.extractor import ExtractionError, extract_text, sanitize_text
 log = get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1")
+
+ACTIVE_WORKER_TIMEOUT = timedelta(seconds=90)
+active_worker_heartbeats: dict[str, datetime] = {}
+
+
+def _prune_active_workers() -> None:
+    cutoff = datetime.now(timezone.utc) - ACTIVE_WORKER_TIMEOUT
+    expired_workers = [
+        username
+        for username, last_seen in active_worker_heartbeats.items()
+        if last_seen < cutoff
+    ]
+    for username in expired_workers:
+        del active_worker_heartbeats[username]
 
 
 # ---------------------------------------------------------------------------
@@ -262,6 +278,8 @@ def logout(
     """
     if token_data.jti and token_data.exp:
         revoke_token(token_data.jti, token_data.exp.timestamp())
+    if token_data.user_id:
+        active_worker_heartbeats.pop(token_data.user_id, None)
 
     crud.log_activity(
         db=db,
@@ -292,6 +310,29 @@ def refresh_token(
     new_token, expires_in = create_access_token(user_id=token_data.user_id)
     log.info(f"Token refreshed for user '{token_data.user_id}'")
     return Token(access_token=new_token, expires_in=expires_in)
+
+
+@router.post("/workers/heartbeat", response_model=ActiveWorkersResponse, tags=["System"])
+def worker_heartbeat(current_user: str = Depends(get_current_user)):
+    """Mark the current worker as active and return the active worker count."""
+    active_worker_heartbeats[current_user] = datetime.now(timezone.utc)
+    _prune_active_workers()
+    active_usernames = sorted(active_worker_heartbeats)
+    return ActiveWorkersResponse(
+        active_workers=len(active_usernames),
+        active_usernames=active_usernames,
+    )
+
+
+@router.get("/workers/active", response_model=ActiveWorkersResponse, tags=["System"])
+def get_active_workers(current_user: str = Depends(get_current_user)):
+    """Return workers seen by heartbeat in the last 90 seconds."""
+    _prune_active_workers()
+    active_usernames = sorted(active_worker_heartbeats)
+    return ActiveWorkersResponse(
+        active_workers=len(active_usernames),
+        active_usernames=active_usernames,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -245,6 +245,11 @@ class HealthResponse(BaseModel):
     database: str
 
 
+class ActiveWorkersResponse(BaseModel):
+    active_workers: int
+    active_usernames: list[str]
+
+
 class SettingsStatusResponse(BaseModel):
     backend_url_hint: str
     google_sheets_configured: bool

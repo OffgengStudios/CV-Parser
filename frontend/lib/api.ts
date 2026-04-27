@@ -100,6 +100,11 @@ export interface ApiHealth {
   database: string
 }
 
+export interface ApiActiveWorkers {
+  active_workers: number
+  active_usernames: string[]
+}
+
 export interface ApiSettingsStatus {
   backend_url_hint: string
   google_sheets_configured: boolean
@@ -402,6 +407,20 @@ async function readErrorDetail(response: Response): Promise<string | null> {
 
 export async function fetchHealth() {
   return apiFetch<ApiHealth>("/api/v1/health")
+}
+
+export async function sendWorkerHeartbeat() {
+  return apiFetch<ApiActiveWorkers>(
+    "/api/v1/workers/heartbeat",
+    { method: "POST" },
+    { auth: true }
+  )
+}
+
+export async function fetchActiveWorkers() {
+  return apiFetch<ApiActiveWorkers>("/api/v1/workers/active", undefined, {
+    auth: true,
+  })
 }
 
 export async function fetchCandidates(

@@ -23,6 +23,7 @@ import { useToast } from "@/hooks/use-toast"
 import {
   deleteCandidate,
   fetchCandidates,
+  fetchActiveWorkers,
   fetchHealth,
   fetchUploadLogs,
   getApiErrorMessage,
@@ -97,6 +98,7 @@ export default function DashboardPage() {
     status: string
     database: string
   } | null>(null)
+  const [activeWorkers, setActiveWorkers] = useState(0)
   const [loading, setLoading] = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [resolvingUploadId, setResolvingUploadId] = useState<number | null>(null)
@@ -131,6 +133,12 @@ export default function DashboardPage() {
           status: healthResponse.status,
           database: healthResponse.database,
         })
+        try {
+          const activeWorkerResponse = await fetchActiveWorkers()
+          setActiveWorkers(activeWorkerResponse.active_workers)
+        } catch {
+          setActiveWorkers(0)
+        }
       } catch (error) {
         toast({
           title: "Dashboard unavailable",
@@ -143,6 +151,31 @@ export default function DashboardPage() {
     }
 
     loadDashboard()
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadActiveWorkers() {
+      try {
+        const response = await fetchActiveWorkers()
+        if (!cancelled) {
+          setActiveWorkers(response.active_workers)
+        }
+      } catch {
+        if (!cancelled) {
+          setActiveWorkers(0)
+        }
+      }
+    }
+
+    loadActiveWorkers()
+    const intervalId = window.setInterval(loadActiveWorkers, 10_000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(intervalId)
+    }
   }, [])
 
   async function handleDeleteCandidate(id: string) {
@@ -422,7 +455,7 @@ export default function DashboardPage() {
             <div className="flex flex-col gap-6">
               <SystemStatus
                 queueSize={0}
-                activeWorkers={health?.status === "ok" ? 1 : 0}
+                activeWorkers={activeWorkers}
                 processingSpeed={stats.completed}
                 online={health?.status === "ok"}
               />
