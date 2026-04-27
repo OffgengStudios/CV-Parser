@@ -76,6 +76,9 @@ export interface ApiUploadLog {
   candidate_id: string | null
   file_size_bytes: number | null
   error_message: string | null
+  resolved_at: string | null
+  resolved_by: string | null
+  resolution_note: string | null
   created_at: string
 }
 
@@ -97,12 +100,23 @@ export interface ApiHealth {
   database: string
 }
 
+export interface ApiActiveWorkers {
+  active_workers: number
+  active_usernames: string[]
+}
+
 export interface ApiSettingsStatus {
   backend_url_hint: string
   google_sheets_configured: boolean
   google_service_account_file_present: boolean
+  google_service_account_json_present: boolean
   google_sheets_tab_name: string
   google_sheets_spreadsheet_id: string | null
+}
+
+export interface ApiGoogleSheetsSyncResponse {
+  synced_candidates: number
+  message: string
 }
 
 export interface ApiWorkerUser {
@@ -395,6 +409,20 @@ export async function fetchHealth() {
   return apiFetch<ApiHealth>("/api/v1/health")
 }
 
+export async function sendWorkerHeartbeat() {
+  return apiFetch<ApiActiveWorkers>(
+    "/api/v1/workers/heartbeat",
+    { method: "POST" },
+    { auth: true }
+  )
+}
+
+export async function fetchActiveWorkers() {
+  return apiFetch<ApiActiveWorkers>("/api/v1/workers/active", undefined, {
+    auth: true,
+  })
+}
+
 export async function fetchCandidates(
   category?: string,
   options?: { limit?: number; offset?: number }
@@ -496,6 +524,20 @@ export async function fetchUploadLogs(limit = 20) {
   })
 }
 
+export async function resolveUploadLog(id: number, resolutionNote?: string) {
+  return apiFetch<ApiUploadLog>(
+    `/api/v1/uploads/logs/${id}/resolve`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ resolution_note: resolutionNote || undefined }),
+    },
+    { auth: true }
+  )
+}
+
 export async function uploadCvFiles(files: File[]) {
   const formData = new FormData()
   files.forEach((file) => formData.append("files", file))
@@ -532,7 +574,19 @@ export async function fetchActivityLogs(limit = 100, worker?: string) {
 }
 
 export async function fetchSettingsStatus() {
-  return apiFetch<ApiSettingsStatus>("/api/v1/settings/status")
+  return apiFetch<ApiSettingsStatus>("/api/v1/settings/status", undefined, {
+    auth: true,
+  })
+}
+
+export async function resyncGoogleSheets() {
+  return apiFetch<ApiGoogleSheetsSyncResponse>(
+    "/api/v1/settings/google-sheets/resync",
+    {
+      method: "POST",
+    },
+    { auth: true }
+  )
 }
 
 export async function createWorkerLogin(input: {

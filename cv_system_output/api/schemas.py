@@ -6,7 +6,7 @@ Kept separate from ORM models to decouple API contract from database schema.
 from __future__ import annotations
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +63,7 @@ class CandidateOut(BaseModel):
 class CandidateUpdateRequest(BaseModel):
     """Fields that can be manually corrected after parsing."""
     name: Optional[str] = None
-    email: Optional[EmailStr | str] = None
+    email: Optional[str] = None
     phone: Optional[str] = None
     skills: Optional[list[str]] = None
     experience: Optional[str] = None
@@ -209,9 +209,16 @@ class UploadLogOut(BaseModel):
     candidate_id: Optional[str]
     file_size_bytes: Optional[int]
     error_message: Optional[str]
+    resolved_at: Optional[datetime]
+    resolved_by: Optional[str]
+    resolution_note: Optional[str]
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ResolveUploadLogRequest(BaseModel):
+    resolution_note: Optional[str] = None
 
 
 class ActivityLogOut(BaseModel):
@@ -238,12 +245,23 @@ class HealthResponse(BaseModel):
     database: str
 
 
+class ActiveWorkersResponse(BaseModel):
+    active_workers: int
+    active_usernames: list[str]
+
+
 class SettingsStatusResponse(BaseModel):
     backend_url_hint: str
     google_sheets_configured: bool
     google_service_account_file_present: bool
+    google_service_account_json_present: bool = False
     google_sheets_tab_name: str
     google_sheets_spreadsheet_id: Optional[str]
+
+
+class GoogleSheetsSyncResponse(BaseModel):
+    synced_candidates: int
+    message: str
 
 
 # ---------------------------------------------------------------------------

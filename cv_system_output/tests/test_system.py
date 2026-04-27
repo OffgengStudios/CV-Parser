@@ -26,7 +26,7 @@ from parser.parser import infer_name_from_filename, parse_cv, should_prefer_file
 from parser.extractor import sanitize_text
 from classifier.classifier import classify_cv
 from api.pipeline import process_cv_file
-from auth import get_current_user
+from auth import get_current_user, require_admin_user
 from google_sheets import (
     ANALYTICS_HEADERS,
     SHEET_HEADERS,
@@ -509,11 +509,15 @@ class TestAPI:
         assert data["database"] == "ok"
 
     def test_settings_status(self, client):
-        resp = client.get("/api/v1/settings/status")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "google_sheets_configured" in data
-        assert "google_sheets_tab_name" in data
+        app.dependency_overrides[require_admin_user] = lambda: "admin"
+        try:
+            resp = client.get("/api/v1/settings/status")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert "google_sheets_configured" in data
+            assert "google_sheets_tab_name" in data
+        finally:
+            app.dependency_overrides.pop(require_admin_user, None)
 
     def test_upload_invalid_extension(self, client):
         files = [("files", ("resume.txt", io.BytesIO(b"John Doe"), "text/plain"))]

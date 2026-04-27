@@ -13,7 +13,7 @@ import {
 import { SystemStatus } from "@/components/system-status"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
-import { uploadCvFiles, type ApiUploadError } from "@/lib/api"
+import { getApiErrorMessage, uploadCvFiles, type ApiUploadError } from "@/lib/api"
 
 function formatUploadError(error: string): string {
   const lower = error.toLowerCase()
@@ -142,13 +142,14 @@ export default function UploadPage() {
             : `${response.success_count} file(s) processed successfully.`,
         variant: response.failure_count > 0 ? "destructive" : undefined,
       })
-    } catch {
+    } catch (error) {
+      const message = getApiErrorMessage(error)
       setFiles((prev) =>
         prev.map((file) => ({
           ...file,
           status: "failed",
           progress: 100,
-          errorMessage: "The backend could not process this batch. Check that the server is running and try again.",
+          errorMessage: message,
         }))
       )
       setLastResult({
@@ -158,13 +159,13 @@ export default function UploadPage() {
       })
       toast({
         title: "Upload failed",
-        description: "The backend could not process this batch.",
+        description: message,
         variant: "destructive",
       })
     } finally {
       setIsUploading(false)
     }
-  }, [files])
+  }, [files, toast])
 
   const queuedCount = useMemo(
     () => files.filter((f) => f.status === "queued").length,

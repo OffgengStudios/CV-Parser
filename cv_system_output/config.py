@@ -3,7 +3,9 @@ config.py — Central application configuration.
 All settings are env-overridable; no hardcoded values in application code.
 """
 from pathlib import Path
+import secrets
 from typing import Optional
+import warnings
 from pydantic import ConfigDict, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
@@ -34,6 +36,7 @@ class Settings(BaseSettings):
     LOG_DIR: Path = Path("logs")
     MAX_FILE_SIZE_MB: int = 10
     GOOGLE_SERVICE_ACCOUNT_FILE: Optional[Path] = None
+    GOOGLE_SERVICE_ACCOUNT_JSON: Optional[str] = None
     GOOGLE_SHEETS_SPREADSHEET_ID: Optional[str] = None
     GOOGLE_SHEETS_TAB_NAME: str = "Sheet1"
     GOOGLE_SHEETS_ANALYTICS_TAB_NAME: str = "Batch Analytics"
@@ -72,15 +75,20 @@ class Settings(BaseSettings):
         if self.TESTING or self.DEBUG:
             return self  # skip enforcement in test / dev environments
         if self.SECRET_KEY == _dev_default:
-            raise ValueError(
-                "SECRET_KEY is set to the default development value. "
-                "Set a strong random SECRET_KEY in your environment before deploying. "
-                "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            self.SECRET_KEY = secrets.token_hex(32)
+            warnings.warn(
+                "SECRET_KEY is not configured; generated a temporary runtime key. "
+                "Set a permanent SECRET_KEY environment variable on Render so sessions "
+                "remain valid across restarts.",
+                RuntimeWarning,
             )
+            return self
         if len(self.SECRET_KEY) < 32:
-            raise ValueError(
-                f"SECRET_KEY is too short ({len(self.SECRET_KEY)} chars). "
-                "Minimum 32 characters required for HS256 signing."
+            self.SECRET_KEY = secrets.token_hex(32)
+            warnings.warn(
+                "Configured SECRET_KEY is shorter than 32 characters; generated a "
+                "temporary runtime key. Set a stronger permanent SECRET_KEY on Render.",
+                RuntimeWarning,
             )
         return self
 
