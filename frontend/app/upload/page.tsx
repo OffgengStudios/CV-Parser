@@ -87,80 +87,98 @@ export default function UploadPage() {
 
   const uploadNow = useCallback(async () => {
     if (!files.length) return
+    const pendingFiles = files.filter((file) => file.status !== "done")
+    if (!pendingFiles.length) return
 
     setIsUploading(true)
     setFiles((prev) =>
-      prev.map((file) => ({ ...file, status: "processing", progress: 50 }))
+      prev.map((file) =>
+        file.status === "done"
+          ? file
+          : { ...file, status: "queued", progress: 0, errorMessage: undefined }
+      )
     )
 
     try {
-      const response = await uploadCvFiles(files.map((file) => file.file))
-      const successByFilename = new Set(
-        response.results.map((result) => result.filename)
-      )
-      const errorByFilename = new Map(
-        response.errors.map((error) => [
-          error.filename,
-          formatUploadError(error.error),
-        ])
-      )
+      let successCount = 0
+      let failureCount = 0
+      const uploadErrors: ApiUploadError[] = []
 
-      setFiles((prev) =>
-        prev.map((file) => {
-          const errorMessage = errorByFilename.get(file.file.name)
-          if (errorMessage) {
-            return { ...file, status: "failed", progress: 100, errorMessage }
+      for (const uploadFile of pendingFiles) {
+        setFiles((prev) =>
+          prev.map((file) =>
+            file.id === uploadFile.id
+              ? { ...file, status: "processing", progress: 50, errorMessage: undefined }
+              : file
+          )
+        )
+
+        try {
+          const response = await uploadCvFiles([uploadFile.file])
+          const uploadError = response.errors[0]
+
+          if (response.success_count > 0 && response.results.length > 0) {
+            successCount += 1
+            setFiles((prev) =>
+              prev.map((file) =>
+                file.id === uploadFile.id
+                  ? { ...file, status: "done", progress: 100, errorMessage: undefined }
+                  : file
+              )
+            )
+            continue
           }
 
-          if (successByFilename.has(file.file.name)) {
-            return { ...file, status: "done", progress: 100, errorMessage: undefined }
-          }
-
-          return {
-            ...file,
-            status: "failed",
-            progress: 100,
-            errorMessage: "The backend did not return a result for this file.",
-          }
-        })
-      )
+          const rawError =
+            uploadError?.error || "The backend did not return a result for this file."
+          const errorMessage = formatUploadError(rawError)
+          failureCount += 1
+          uploadErrors.push({
+            filename: uploadFile.file.name,
+            error: rawError,
+            message: uploadError?.message || "CV processing failed.",
+          })
+          setFiles((prev) =>
+            prev.map((file) =>
+              file.id === uploadFile.id
+                ? { ...file, status: "failed", progress: 100, errorMessage }
+                : file
+            )
+          )
+        } catch (error) {
+          const message = getApiErrorMessage(error)
+          failureCount += 1
+          uploadErrors.push({
+            filename: uploadFile.file.name,
+            error: message,
+            message: "CV processing failed.",
+          })
+          setFiles((prev) =>
+            prev.map((file) =>
+              file.id === uploadFile.id
+                ? { ...file, status: "failed", progress: 100, errorMessage: message }
+                : file
+            )
+          )
+        }
+      }
 
       setLastResult({
-        total: response.total_files,
-        success: response.success_count,
-        failure: response.failure_count,
+        total: pendingFiles.length,
+        success: successCount,
+        failure: failureCount,
       })
 
       toast({
         title:
-          response.failure_count > 0
+          failureCount > 0
             ? "Some uploads failed"
             : "Upload complete",
         description:
-          response.failure_count > 0
-            ? summarizeUploadErrors(response.errors)
-            : `${response.success_count} file(s) processed successfully.`,
-        variant: response.failure_count > 0 ? "destructive" : undefined,
-      })
-    } catch (error) {
-      const message = getApiErrorMessage(error)
-      setFiles((prev) =>
-        prev.map((file) => ({
-          ...file,
-          status: "failed",
-          progress: 100,
-          errorMessage: message,
-        }))
-      )
-      setLastResult({
-        total: files.length,
-        success: 0,
-        failure: files.length,
-      })
-      toast({
-        title: "Upload failed",
-        description: message,
-        variant: "destructive",
+          failureCount > 0
+            ? summarizeUploadErrors(uploadErrors)
+            : `${successCount} file(s) processed successfully.`,
+        variant: failureCount > 0 ? "destructive" : undefined,
       })
     } finally {
       setIsUploading(false)
