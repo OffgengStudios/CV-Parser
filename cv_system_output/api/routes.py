@@ -339,27 +339,6 @@ def get_active_workers(current_user: str = Depends(get_current_user)):
 # Worker management (admin only)
 # ---------------------------------------------------------------------------
 
-@router.get("/admin/users", response_model=list[WorkerUserResponse], tags=["Authentication"])
-def list_worker_users(
-    db: Session = Depends(get_db),
-    admin_user: str = Depends(require_admin_user),
-):
-    """List all worker accounts. Admin only."""
-    users = crud.list_worker_users(db)
-    return [
-        WorkerUserResponse(
-            username=u.username,
-            full_name=u.full_name,
-            is_admin=u.is_admin,
-            is_active=u.is_active,
-            created_by=u.created_by,
-            temporary_password=u.temporary_password,
-            created_at=u.created_at,
-        )
-        for u in users
-    ]
-
-
 @router.delete("/admin/users", tags=["Authentication"])
 def delete_old_worker_logins(
     db: Session = Depends(get_db),
