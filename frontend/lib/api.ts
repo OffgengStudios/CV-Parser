@@ -178,7 +178,12 @@ export interface ApiUploadBatchResponse {
 
 function normalizeApiBaseUrl(value: string | undefined): string {
   const configuredUrl = value?.trim().replace(/\/$/, "")
-  const baseUrl = configuredUrl || "http://127.0.0.1:8000"
+  const renderBackendUrl = "https://cv-parser-backend-ggl7.onrender.com"
+  const isRenderFrontend =
+    typeof window !== "undefined" &&
+    window.location.hostname.endsWith(".onrender.com")
+  const baseUrl =
+    configuredUrl || (isRenderFrontend ? renderBackendUrl : "http://127.0.0.1:8000")
 
   if (baseUrl.startsWith("http://") || baseUrl.startsWith("https://")) {
     return baseUrl
@@ -238,7 +243,7 @@ export function getApiErrorMessage(error: unknown): string {
   }
 
   if (error instanceof TypeError) {
-    return "The frontend cannot reach the backend. Check that the backend server is running."
+    return `The frontend cannot reach the backend at ${API_BASE_URL}. Check the frontend NEXT_PUBLIC_API_BASE_URL setting and backend CORS.`
   }
 
   return "Something went wrong while loading data. Please try again."
