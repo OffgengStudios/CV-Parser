@@ -476,6 +476,30 @@ export async function deleteWorkerLogin(username: string) {
   }
 }
 
+export async function deleteOldWorkerLogins() {
+  return apiFetch<{ deleted_count: number; deleted_usernames: string[] }>(
+    "/api/v1/admin/users",
+    {
+      method: "DELETE",
+    },
+    { auth: true }
+  )
+}
+
+export async function updateWorkerLoginAdmin(username: string, isAdmin: boolean) {
+  return apiFetch<ApiWorkerUser>(
+    `/api/v1/admin/users/${encodeURIComponent(username)}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ is_admin: isAdmin }),
+    },
+    { auth: true }
+  )
+}
+
 export async function fetchCurrentWorkerProfile() {
   return apiFetch<ApiWorkerUser>("/api/v1/me", undefined, { auth: true })
 }

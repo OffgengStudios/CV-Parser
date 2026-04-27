@@ -29,6 +29,7 @@ from auth import (
     CreateWorkerUserRequest,
     LoginRequest,
     Token,
+    UpdateWorkerUserRequest,
     WorkerUserResponse,
     create_access_token,
     get_current_user,
@@ -193,6 +194,75 @@ def list_worker_logins(
         )
         for user in users
     ]
+
+
+@router.delete("/admin/users", tags=["Authentication"])
+def delete_old_worker_logins(
+    db: Session = Depends(get_db),
+    admin_user: str = Depends(require_admin_user),
+):
+    """Delete all stored worker logins except the current admin account."""
+    deleted_usernames = crud.delete_worker_users(db, exclude_usernames={admin_user})
+    crud.log_activity(
+        db=db,
+        worker=admin_user,
+        action="delete_old_worker_logins",
+        target_type="worker_user",
+        status="success",
+        details=f"Admin user deleted {len(deleted_usernames)} worker logins",
+    )
+    return {
+        "deleted_count": len(deleted_usernames),
+        "deleted_usernames": deleted_usernames,
+    }
+
+
+@router.patch("/admin/users/{username}", response_model=WorkerUserResponse, tags=["Authentication"])
+def update_worker_login(
+    username: str,
+    request: UpdateWorkerUserRequest,
+    db: Session = Depends(get_db),
+    admin_user: str = Depends(require_admin_user),
+):
+    """Update a worker login's admin access."""
+    normalized_username = username.strip().lower()
+
+    if is_builtin_user(normalized_username):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Built-in demo login permissions cannot be changed.",
+        )
+    if normalized_username == admin_user and not request.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot remove admin access from the login you are currently using.",
+        )
+
+    user = crud.update_worker_user_admin(db, normalized_username, request.is_admin)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Worker login not found.",
+        )
+
+    crud.log_activity(
+        db=db,
+        worker=admin_user,
+        action="update_worker_login",
+        target_type="worker_user",
+        target_label=normalized_username,
+        status="success",
+        details=f"Admin access set to {request.is_admin}",
+    )
+    return WorkerUserResponse(
+        username=user.username,
+        full_name=user.full_name,
+        is_admin=user.is_admin,
+        is_active=user.is_active,
+        created_by=user.created_by,
+        temporary_password=user.temporary_password,
+        created_at=user.created_at,
+    )
 
 
 @router.delete("/admin/users/{username}", status_code=status.HTTP_204_NO_CONTENT, tags=["Authentication"])

@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { useToast } from "@/hooks/use-toast"
-import { createWorkerLogin, deleteWorkerLogin, fetchCurrentWorkerProfile, fetchHealth, fetchSettingsStatus, fetchWorkerLogins, getApiErrorMessage, type ApiWorkerUser } from "@/lib/api"
+import { createWorkerLogin, deleteOldWorkerLogins, deleteWorkerLogin, fetchCurrentWorkerProfile, fetchHealth, fetchSettingsStatus, fetchWorkerLogins, getApiErrorMessage, updateWorkerLoginAdmin, type ApiWorkerUser } from "@/lib/api"
 
 const backendUrl =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000"
@@ -38,6 +38,8 @@ export default function SettingsPage() {
   const [loadingWorkerLogins, setLoadingWorkerLogins] = useState(false)
   const [visiblePasswords, setVisiblePasswords] = useState<string[]>([])
   const [deletingWorker, setDeletingWorker] = useState<string | null>(null)
+  const [deletingOldLogins, setDeletingOldLogins] = useState(false)
+  const [updatingAdminWorker, setUpdatingAdminWorker] = useState<string | null>(null)
 
   const statusIcon = health?.status === "ok" ? (
     <CheckCircle2 className="h-5 w-5 text-success" />
@@ -168,6 +170,61 @@ export default function SettingsPage() {
     }
   }
 
+  async function handleDeleteOldLogins() {
+    const confirmed = window.confirm(
+      "Delete all stored worker logins? The account you are using will be kept."
+    )
+    if (!confirmed) return
+
+    setDeletingOldLogins(true)
+    try {
+      const result = await deleteOldWorkerLogins()
+      const deletedUsernames = new Set(result.deleted_usernames)
+      setWorkerLogins((current) =>
+        current.filter((worker) => !deletedUsernames.has(worker.username))
+      )
+      setVisiblePasswords((current) =>
+        current.filter((username) => !deletedUsernames.has(username))
+      )
+      toast({
+        title: "Old logins deleted",
+        description: `${result.deleted_count} stored login${result.deleted_count === 1 ? "" : "s"} removed.`,
+      })
+    } catch (error) {
+      toast({
+        title: "Could not delete old logins",
+        description: getApiErrorMessage(error),
+        variant: "destructive",
+      })
+    } finally {
+      setDeletingOldLogins(false)
+    }
+  }
+
+  async function handleToggleWorkerAdmin(username: string, isAdmin: boolean) {
+    setUpdatingAdminWorker(username)
+    try {
+      const updated = await updateWorkerLoginAdmin(username, isAdmin)
+      setWorkerLogins((current) =>
+        current.map((worker) =>
+          worker.username === username ? { ...worker, is_admin: updated.is_admin } : worker
+        )
+      )
+      toast({
+        title: "Admin access updated",
+        description: `${username} is now ${updated.is_admin ? "an admin" : "a worker"}.`,
+      })
+    } catch (error) {
+      toast({
+        title: "Could not update admin access",
+        description: getApiErrorMessage(error),
+        variant: "destructive",
+      })
+    } finally {
+      setUpdatingAdminWorker(null)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <AppSidebar />
@@ -279,16 +336,32 @@ export default function SettingsPage() {
                       Created Logins
                     </h2>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={loadWorkerLogins}
-                    disabled={loadingWorkerLogins}
-                    className="shrink-0 gap-2"
-                  >
-                    <RefreshCcw className="h-4 w-4" />
-                    {loadingWorkerLogins ? "Loading..." : "Refresh"}
-                  </Button>
+                  <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleDeleteOldLogins}
+                      disabled={deletingOldLogins || loadingWorkerLogins || workerLogins.length === 0}
+                      className="gap-2 text-destructive hover:text-destructive"
+                    >
+                      {deletingOldLogins ? (
+                        <RefreshCcw className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                      {deletingOldLogins ? "Deleting..." : "Delete Old Logins"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={loadWorkerLogins}
+                      disabled={loadingWorkerLogins || deletingOldLogins}
+                      className="gap-2"
+                    >
+                      <RefreshCcw className="h-4 w-4" />
+                      {loadingWorkerLogins ? "Loading..." : "Refresh"}
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -314,6 +387,7 @@ export default function SettingsPage() {
                             : "********"
                           : "Hashed only"
                         const isDeleting = deletingWorker === worker.username
+                        const isUpdatingAdmin = updatingAdminWorker === worker.username
 
                         return (
                           <tr key={worker.username} className="border-b border-border last:border-0">
@@ -359,8 +433,23 @@ export default function SettingsPage() {
                                 </Button>
                               </div>
                             </td>
-                            <td className="py-3 pr-4 text-muted-foreground">
-                              {worker.is_admin ? "Admin" : "Worker"}
+                            <td className="py-3 pr-4">
+                              <div className="flex items-center gap-2">
+                                <Switch
+                                  checked={worker.is_admin}
+                                  onCheckedChange={(checked) =>
+                                    handleToggleWorkerAdmin(worker.username, checked)
+                                  }
+                                  disabled={isUpdatingAdmin || deletingOldLogins || Boolean(deletingWorker)}
+                                  aria-label={`Admin access for ${worker.username}`}
+                                />
+                                <span className="text-muted-foreground">
+                                  {worker.is_admin ? "Admin" : "Worker"}
+                                </span>
+                                {isUpdatingAdmin && (
+                                  <RefreshCcw className="h-4 w-4 animate-spin text-muted-foreground" />
+                                )}
+                              </div>
                             </td>
                             <td className="py-3 pr-4 text-muted-foreground">
                               {worker.created_by || "-"}
@@ -376,7 +465,7 @@ export default function SettingsPage() {
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => handleDeleteWorker(worker.username)}
-                                disabled={Boolean(deletingWorker)}
+                                disabled={Boolean(deletingWorker) || deletingOldLogins}
                                 title="Delete login"
                                 className="text-destructive hover:text-destructive"
                               >
