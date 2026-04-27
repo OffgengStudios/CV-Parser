@@ -50,7 +50,7 @@ from auth import (
     revoke_token,
     verify_credentials,
 )
-from classifier.classifier import MAIN_CATEGORIES
+from classifier.classifier import MAIN_CATEGORIES, TAXONOMY
 from matching import match_candidates
 from api.schemas import (
     ActivityLogOut,
@@ -59,6 +59,7 @@ from api.schemas import (
     CandidateListItem,
     CandidateListOut,
     CandidateOut,
+    CandidateTaxonomyOut,
     CandidateUpdateRequest,
     DuplicateCandidateGroupsOut,
     DuplicateCandidateGroup,
@@ -656,6 +657,19 @@ def list_candidates(
     items = [_candidate_list_item(c) for c in candidates]
 
     return CandidateListOut(total=total, limit=limit, offset=offset, candidates=items)
+
+
+@router.get("/candidates/taxonomy", response_model=CandidateTaxonomyOut, tags=["Candidates"])
+def get_candidate_taxonomy(
+    current_user: str = Depends(get_current_user),
+):
+    """Return existing categories and subcategories used by the classifier."""
+    return CandidateTaxonomyOut(
+        categories={
+            category: list(subcategories.keys())
+            for category, subcategories in TAXONOMY.items()
+        }
+    )
 
 
 def _candidate_list_item(candidate) -> CandidateListItem:

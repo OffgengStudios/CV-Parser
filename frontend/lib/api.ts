@@ -46,6 +46,10 @@ export interface ApiCandidateUpdate {
   seniority_level?: string | null
 }
 
+export interface ApiCandidateTaxonomy {
+  categories: Record<string, string[]>
+}
+
 export interface ApiCandidateListResponse {
   total: number
   limit: number
@@ -432,6 +436,12 @@ export async function fetchAllCandidates(category?: string) {
 
 export async function fetchCandidate(id: string) {
   return apiFetch<ApiCandidateDetail>(`/api/v1/candidates/${id}`, undefined, {
+    auth: true,
+  })
+}
+
+export async function fetchCandidateTaxonomy() {
+  return apiFetch<ApiCandidateTaxonomy>("/api/v1/candidates/taxonomy", undefined, {
     auth: true,
   })
 }

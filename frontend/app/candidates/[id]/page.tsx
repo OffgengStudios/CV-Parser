@@ -32,6 +32,13 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
@@ -39,12 +46,15 @@ import {
   deleteCandidate,
   fetchCandidate,
   fetchCandidateCvBlob,
+  fetchCandidateTaxonomy,
   fetchCurrentWorkerProfile,
   updateCandidate,
   type ApiCandidateDetail,
 } from "@/lib/api"
 
 type ViewMode = "parsed" | "raw"
+const EMPTY_SELECT_VALUE = "__none"
+
 type EditValues = {
   name: string
   email: string
@@ -90,6 +100,7 @@ export default function CandidateDetailPage({
   const [loading, setLoading] = useState(true)
   const [missing, setMissing] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [taxonomy, setTaxonomy] = useState<Record<string, string[]>>({})
   const [deleting, setDeleting] = useState(false)
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -118,8 +129,12 @@ export default function CandidateDetailPage({
   useEffect(() => {
     async function loadWorkerProfile() {
       try {
-        const profile = await fetchCurrentWorkerProfile()
+        const [profile, taxonomyResponse] = await Promise.all([
+          fetchCurrentWorkerProfile(),
+          fetchCandidateTaxonomy(),
+        ])
         setIsAdmin(profile.is_admin)
+        setTaxonomy(taxonomyResponse.categories)
       } catch {
         setIsAdmin(false)
       }
@@ -166,6 +181,25 @@ export default function CandidateDetailPage({
 
   function updateEditValue(field: keyof EditValues, value: string) {
     setEditValues((current) => current ? { ...current, [field]: value } : current)
+  }
+
+  function updateCategory(value: string) {
+    const category = value === EMPTY_SELECT_VALUE ? "" : value
+    setEditValues((current) => {
+      if (!current) return current
+      const subcategories = taxonomy[category] || []
+      return {
+        ...current,
+        category,
+        subcategory: subcategories.includes(current.subcategory)
+          ? current.subcategory
+          : "",
+      }
+    })
+  }
+
+  function updateSubcategory(value: string) {
+    updateEditValue("subcategory", value === EMPTY_SELECT_VALUE ? "" : value)
   }
 
   async function handleSaveCorrections(event: FormEvent<HTMLFormElement>) {
@@ -463,19 +497,42 @@ export default function CandidateDetailPage({
                       </div>
                       <div className="grid gap-2">
                         <Label htmlFor="candidate-category">Category</Label>
-                        <Input
-                          id="candidate-category"
-                          value={editValues.category}
-                          onChange={(event) => updateEditValue("category", event.target.value)}
-                        />
+                        <Select
+                          value={editValues.category || EMPTY_SELECT_VALUE}
+                          onValueChange={updateCategory}
+                        >
+                          <SelectTrigger id="candidate-category" className="w-full">
+                            <SelectValue placeholder="Select category" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={EMPTY_SELECT_VALUE}>No category</SelectItem>
+                            {Object.keys(taxonomy).map((category) => (
+                              <SelectItem key={category} value={category}>
+                                {category}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                       <div className="grid gap-2">
                         <Label htmlFor="candidate-subcategory">Subcategory</Label>
-                        <Input
-                          id="candidate-subcategory"
-                          value={editValues.subcategory}
-                          onChange={(event) => updateEditValue("subcategory", event.target.value)}
-                        />
+                        <Select
+                          value={editValues.subcategory || EMPTY_SELECT_VALUE}
+                          onValueChange={updateSubcategory}
+                          disabled={!editValues.category}
+                        >
+                          <SelectTrigger id="candidate-subcategory" className="w-full">
+                            <SelectValue placeholder="Select subcategory" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={EMPTY_SELECT_VALUE}>No subcategory</SelectItem>
+                            {(taxonomy[editValues.category] || []).map((subcategory) => (
+                              <SelectItem key={subcategory} value={subcategory}>
+                                {subcategory}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                       <div className="grid gap-2">
                         <Label htmlFor="candidate-seniority">Seniority</Label>

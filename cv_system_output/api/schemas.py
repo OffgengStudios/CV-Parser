@@ -110,6 +110,11 @@ class CandidateCorrectionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class CandidateTaxonomyOut(BaseModel):
+    """Available candidate categories and subcategories."""
+    categories: dict[str, list[str]]
+
+
 class CandidateListItem(BaseModel):
     """Lightweight candidate representation for list responses."""
     id: str
