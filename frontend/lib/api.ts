@@ -459,6 +459,23 @@ export async function fetchWorkerLogins() {
   return apiFetch<ApiWorkerUser[]>("/api/v1/admin/users", undefined, { auth: true })
 }
 
+export async function deleteWorkerLogin(username: string) {
+  const response = await fetch(`${API_BASE_URL}/api/v1/admin/users/${encodeURIComponent(username)}`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${await getAccessToken()}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new ApiRequestError(
+      `/api/v1/admin/users/${username}`,
+      response.status,
+      await readErrorDetail(response)
+    )
+  }
+}
+
 export async function fetchCurrentWorkerProfile() {
   return apiFetch<ApiWorkerUser>("/api/v1/me", undefined, { auth: true })
 }

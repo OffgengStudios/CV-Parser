@@ -195,6 +195,45 @@ def list_worker_logins(
     ]
 
 
+@router.delete("/admin/users/{username}", status_code=status.HTTP_204_NO_CONTENT, tags=["Authentication"])
+def delete_worker_login(
+    username: str,
+    db: Session = Depends(get_db),
+    admin_user: str = Depends(require_admin_user),
+):
+    """Delete a worker login. Built-in demo logins cannot be deleted."""
+    normalized_username = username.strip().lower()
+
+    if is_builtin_user(normalized_username):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Built-in demo logins cannot be deleted.",
+        )
+    if normalized_username == admin_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot delete the login you are currently using.",
+        )
+
+    deleted = crud.delete_worker_user(db, normalized_username)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Worker login not found.",
+        )
+
+    crud.log_activity(
+        db=db,
+        worker=admin_user,
+        action="delete_worker_login",
+        target_type="worker_user",
+        target_label=normalized_username,
+        status="success",
+        details="Admin user deleted a worker login",
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/me", response_model=WorkerUserResponse, tags=["Authentication"])
 def get_current_worker_profile(
     db: Session = Depends(get_db),

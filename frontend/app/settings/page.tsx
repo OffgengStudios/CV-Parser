@@ -1,7 +1,7 @@
 "use client"
 
 import { FormEvent, useCallback, useEffect, useState } from "react"
-import { CheckCircle2, Copy, Database, Eye, EyeOff, Link2, RefreshCcw, Sheet, ShieldCheck, UserPlus, Users, XCircle } from "lucide-react"
+import { CheckCircle2, Copy, Database, Eye, EyeOff, Link2, RefreshCcw, Sheet, ShieldCheck, Trash2, UserPlus, Users, XCircle } from "lucide-react"
 
 import { AppSidebar } from "@/components/app-sidebar"
 import { Button } from "@/components/ui/button"
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { useToast } from "@/hooks/use-toast"
-import { createWorkerLogin, fetchCurrentWorkerProfile, fetchHealth, fetchSettingsStatus, fetchWorkerLogins, getApiErrorMessage, type ApiWorkerUser } from "@/lib/api"
+import { createWorkerLogin, deleteWorkerLogin, fetchCurrentWorkerProfile, fetchHealth, fetchSettingsStatus, fetchWorkerLogins, getApiErrorMessage, type ApiWorkerUser } from "@/lib/api"
 
 const backendUrl =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000"
@@ -37,6 +37,7 @@ export default function SettingsPage() {
   const [workerLogins, setWorkerLogins] = useState<ApiWorkerUser[]>([])
   const [loadingWorkerLogins, setLoadingWorkerLogins] = useState(false)
   const [visiblePasswords, setVisiblePasswords] = useState<string[]>([])
+  const [deletingWorker, setDeletingWorker] = useState<string | null>(null)
 
   const statusIcon = health?.status === "ok" ? (
     <CheckCircle2 className="h-5 w-5 text-success" />
@@ -136,6 +137,34 @@ export default function SettingsPage() {
       })
     } finally {
       setCreatingWorker(false)
+    }
+  }
+
+  async function handleDeleteWorker(username: string) {
+    const confirmed = window.confirm(`Delete login for ${username}?`)
+    if (!confirmed) return
+
+    setDeletingWorker(username)
+    try {
+      await deleteWorkerLogin(username)
+      setWorkerLogins((current) =>
+        current.filter((worker) => worker.username !== username)
+      )
+      setVisiblePasswords((current) =>
+        current.filter((visibleUsername) => visibleUsername !== username)
+      )
+      toast({
+        title: "Login deleted",
+        description: `${username} can no longer sign in.`,
+      })
+    } catch (error) {
+      toast({
+        title: "Could not delete login",
+        description: getApiErrorMessage(error),
+        variant: "destructive",
+      })
+    } finally {
+      setDeletingWorker(null)
     }
   }
 
@@ -271,7 +300,8 @@ export default function SettingsPage() {
                         <th className="py-3 pr-4 font-medium">Password</th>
                         <th className="py-3 pr-4 font-medium">Role</th>
                         <th className="py-3 pr-4 font-medium">Created by</th>
-                        <th className="py-3 font-medium">Created</th>
+                        <th className="py-3 pr-4 font-medium">Created</th>
+                        <th className="py-3 font-medium text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -283,6 +313,7 @@ export default function SettingsPage() {
                             ? worker.temporary_password
                             : "********"
                           : "Hashed only"
+                        const isDeleting = deletingWorker === worker.username
 
                         return (
                           <tr key={worker.username} className="border-b border-border last:border-0">
@@ -334,24 +365,41 @@ export default function SettingsPage() {
                             <td className="py-3 pr-4 text-muted-foreground">
                               {worker.created_by || "-"}
                             </td>
-                            <td className="py-3 text-muted-foreground">
+                            <td className="py-3 pr-4 text-muted-foreground">
                               {worker.created_at
                                 ? new Date(worker.created_at).toLocaleDateString()
                                 : "-"}
+                            </td>
+                            <td className="py-3 text-right">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDeleteWorker(worker.username)}
+                                disabled={Boolean(deletingWorker)}
+                                title="Delete login"
+                                className="text-destructive hover:text-destructive"
+                              >
+                                {isDeleting ? (
+                                  <RefreshCcw className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4" />
+                                )}
+                              </Button>
                             </td>
                           </tr>
                         )
                       })}
                       {!loadingWorkerLogins && workerLogins.length === 0 && (
                         <tr>
-                          <td colSpan={6} className="py-6 text-center text-muted-foreground">
+                          <td colSpan={7} className="py-6 text-center text-muted-foreground">
                             No worker logins have been created yet.
                           </td>
                         </tr>
                       )}
                       {loadingWorkerLogins && (
                         <tr>
-                          <td colSpan={6} className="py-6 text-center text-muted-foreground">
+                          <td colSpan={7} className="py-6 text-center text-muted-foreground">
                             Loading logins...
                           </td>
                         </tr>

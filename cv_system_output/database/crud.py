@@ -53,6 +53,16 @@ def list_worker_users(db: Session) -> list[WorkerUser]:
     return list(db.execute(stmt).scalars().all())
 
 
+def delete_worker_user(db: Session, username: str) -> bool:
+    user = get_worker_user(db, username)
+    if not user:
+        return False
+    db.delete(user)
+    db.commit()
+    log.info(f"Worker user deleted: username={username}")
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Candidate operations
 # ---------------------------------------------------------------------------
