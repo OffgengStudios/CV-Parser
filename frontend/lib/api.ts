@@ -178,18 +178,7 @@ export interface ApiUploadBatchResponse {
 
 function normalizeApiBaseUrl(value: string | undefined): string {
   const configuredUrl = value?.trim().replace(/\/$/, "")
-  const renderBackendUrl = "https://cv-parser-backend-ggl7.onrender.com"
-  const isRenderFrontend =
-    typeof window !== "undefined" &&
-    window.location.hostname.endsWith(".onrender.com")
-
-  if (isRenderFrontend) {
-    return renderBackendUrl
-  }
-
-  const fallbackUrl =
-    configuredUrl || "http://127.0.0.1:8000"
-  const baseUrl = fallbackUrl
+  const baseUrl = configuredUrl || "http://127.0.0.1:8000"
 
   if (baseUrl.startsWith("http://") || baseUrl.startsWith("https://")) {
     return baseUrl
