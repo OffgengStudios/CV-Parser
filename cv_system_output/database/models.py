@@ -87,6 +87,25 @@ class CandidateSkill(Base):
         return f"<CandidateSkill candidate_id={self.candidate_id!r} skill={self.skill!r}>"
 
 
+class CandidateCorrection(Base):
+    __tablename__ = "candidate_corrections"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    candidate_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("candidates.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    corrected_by: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    corrected_fields: Mapped[str] = mapped_column(Text, nullable=False)
+    before_data: Mapped[str] = mapped_column(Text, nullable=False)
+    after_data: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, index=True
+    )
+
+    def __repr__(self) -> str:
+        return f"<CandidateCorrection candidate_id={self.candidate_id!r} corrected_by={self.corrected_by!r}>"
+
+
 class UploadLog(Base):
     __tablename__ = "upload_logs"
 

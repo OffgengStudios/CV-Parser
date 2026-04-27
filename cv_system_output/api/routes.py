@@ -55,6 +55,7 @@ from matching import match_candidates
 from api.schemas import (
     ActivityLogOut,
     BatchSummary,
+    CandidateCorrectionOut,
     CandidateListItem,
     CandidateListOut,
     CandidateOut,
@@ -610,6 +611,23 @@ async def upload_cv(
 # Candidate queries
 # ---------------------------------------------------------------------------
 
+def _candidate_learning_snapshot(candidate) -> dict:
+    return {
+        "name": candidate.name,
+        "email": candidate.email,
+        "phone": candidate.phone,
+        "skills": [skill.skill for skill in candidate.skills],
+        "experience": candidate.experience,
+        "education": candidate.education,
+        "category": candidate.category,
+        "subcategory": candidate.subcategory,
+        "confidence": candidate.confidence,
+        "years_experience": candidate.years_experience,
+        "seniority_level": candidate.seniority_level,
+        "source_filename": candidate.source_filename,
+    }
+
+
 @router.get("/candidates", response_model=CandidateListOut, tags=["Candidates"])
 def list_candidates(
     category: Optional[str] = Query(
@@ -716,13 +734,24 @@ def update_candidate(
     admin_user: str = Depends(require_admin_user),
 ):
     """Correct parsed candidate data for an existing record. Admin only."""
-    updates = request.model_dump(exclude_unset=True)
-    candidate = crud.update_candidate(db=db, candidate_id=candidate_id, updates=updates)
-    if not candidate:
+    existing_candidate = crud.get_candidate(db=db, candidate_id=candidate_id)
+    if not existing_candidate:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Candidate '{candidate_id}' not found.",
         )
+    before_data = _candidate_learning_snapshot(existing_candidate)
+
+    updates = request.model_dump(exclude_unset=True)
+    candidate = crud.update_candidate(db=db, candidate_id=candidate_id, updates=updates)
+    after_data = _candidate_learning_snapshot(candidate)
+    crud.log_candidate_correction(
+        db=db,
+        candidate_id=candidate_id,
+        corrected_by=admin_user,
+        before_data=before_data,
+        after_data=after_data,
+    )
 
     crud.log_activity(
         db=db,
@@ -740,6 +769,23 @@ def update_candidate(
         log.warning(f"Google Sheets sync failed after updating '{candidate_id}': {exc}")
 
     return CandidateOut.from_orm_candidate(candidate)
+
+
+@router.get("/admin/candidate-corrections", response_model=list[CandidateCorrectionOut], tags=["Candidates"])
+def list_candidate_corrections(
+    limit: int = Query(100, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    admin_user: str = Depends(require_admin_user),
+):
+    """List stored correction examples for future retraining. Admin only."""
+    crud.log_activity(
+        db=db,
+        worker=admin_user,
+        action="view_candidate_corrections",
+        target_type="candidate_correction",
+        status="success",
+    )
+    return crud.list_candidate_corrections(db, limit=limit)
 
 
 @router.get("/candidates/{candidate_id}/cv", tags=["Candidates"])

@@ -4,13 +4,14 @@ database/crud.py — Database operations: create, read, update, delete.
 All DB operations live here. API layer never touches ORM models directly.
 """
 import re
+import json
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func, select, desc
 
-from database.models import ActivityLog, Candidate, CandidateSkill, UploadLog, WhatsAppConversation, WhatsAppMessage, WhatsAppMediaUpload, WorkerUser
+from database.models import ActivityLog, Candidate, CandidateCorrection, CandidateSkill, UploadLog, WhatsAppConversation, WhatsAppMessage, WhatsAppMediaUpload, WorkerUser
 from logger import get_logger
 
 log = get_logger(__name__)
@@ -204,6 +205,37 @@ def update_candidate(
     db.refresh(candidate)
     log.info(f"Candidate updated: id={candidate_id}")
     return candidate
+
+
+def log_candidate_correction(
+    db: Session,
+    candidate_id: str,
+    corrected_by: str,
+    before_data: dict,
+    after_data: dict,
+) -> CandidateCorrection:
+    changed_fields = [
+        field_name
+        for field_name, before_value in before_data.items()
+        if before_value != after_data.get(field_name)
+    ]
+    correction = CandidateCorrection(
+        candidate_id=candidate_id,
+        corrected_by=corrected_by,
+        corrected_fields=json.dumps(changed_fields, ensure_ascii=True),
+        before_data=json.dumps(before_data, ensure_ascii=True, default=str),
+        after_data=json.dumps(after_data, ensure_ascii=True, default=str),
+    )
+    db.add(correction)
+    db.commit()
+    db.refresh(correction)
+    log.info(f"Candidate correction logged: candidate_id={candidate_id}, fields={changed_fields}")
+    return correction
+
+
+def list_candidate_corrections(db: Session, limit: int = 100) -> list[CandidateCorrection]:
+    stmt = select(CandidateCorrection).order_by(desc(CandidateCorrection.created_at)).limit(limit)
+    return list(db.execute(stmt).scalars().all())
 
 
 def list_candidates(

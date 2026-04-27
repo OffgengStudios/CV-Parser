@@ -97,6 +97,19 @@ class CandidateUpdateRequest(BaseModel):
         return self
 
 
+class CandidateCorrectionOut(BaseModel):
+    """Stored admin correction used as learning feedback."""
+    id: int
+    candidate_id: Optional[str]
+    corrected_by: str
+    corrected_fields: str
+    before_data: str
+    after_data: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class CandidateListItem(BaseModel):
     """Lightweight candidate representation for list responses."""
     id: str
