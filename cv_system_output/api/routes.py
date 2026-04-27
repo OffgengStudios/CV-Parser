@@ -63,6 +63,7 @@ from api.schemas import (
     CandidateUpdateRequest,
     DuplicateCandidateGroupsOut,
     DuplicateCandidateGroup,
+    GoogleSheetsSyncResponse,
     HealthResponse,
     JobMatchRequest,
     JobMatchResponse,
@@ -79,6 +80,7 @@ from database import crud
 from database.session import get_db
 from google_sheets import (
     append_batch_analytics,
+    has_credentials,
     replace_main_sheet,
     sync_candidate,
 )
@@ -1133,12 +1135,48 @@ def get_settings_status(admin_user: str = Depends(require_admin_user)):
 
     return SettingsStatusResponse(
         backend_url_hint=settings.BACKEND_URL,
-        google_sheets_configured=bool(credentials_path and spreadsheet_id),
+        google_sheets_configured=bool(spreadsheet_id and has_credentials()),
         google_service_account_file_present=bool(
             credentials_path and credentials_path.exists()
         ),
+        google_service_account_json_present=bool(settings.GOOGLE_SERVICE_ACCOUNT_JSON),
         google_sheets_tab_name=settings.GOOGLE_SHEETS_TAB_NAME,
         google_sheets_spreadsheet_id=spreadsheet_id,
+    )
+
+
+@router.post("/settings/google-sheets/resync", response_model=GoogleSheetsSyncResponse, tags=["System"])
+def resync_google_sheets(
+    db: Session = Depends(get_db),
+    admin_user: str = Depends(require_admin_user),
+):
+    """Rewrite the main Google Sheet tab from the current database snapshot."""
+    if not settings.GOOGLE_SHEETS_SPREADSHEET_ID or not has_credentials():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Google Sheets is not configured.",
+        )
+
+    candidates = crud.list_all_candidates(db)
+    try:
+        replace_main_sheet(candidates)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Google Sheets sync failed: {exc}",
+        ) from exc
+
+    crud.log_activity(
+        db=db,
+        worker=admin_user,
+        action="resync_google_sheets",
+        target_type="google_sheet",
+        status="success",
+        details=f"Synced {len(candidates)} candidates",
+    )
+    return GoogleSheetsSyncResponse(
+        synced_candidates=len(candidates),
+        message="Google Sheet refreshed from the current database.",
     )
 
 

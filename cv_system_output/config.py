@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     LOG_DIR: Path = Path("logs")
     MAX_FILE_SIZE_MB: int = 10
     GOOGLE_SERVICE_ACCOUNT_FILE: Optional[Path] = None
+    GOOGLE_SERVICE_ACCOUNT_JSON: Optional[str] = None
     GOOGLE_SHEETS_SPREADSHEET_ID: Optional[str] = None
     GOOGLE_SHEETS_TAB_NAME: str = "Sheet1"
     GOOGLE_SHEETS_ANALYTICS_TAB_NAME: str = "Batch Analytics"

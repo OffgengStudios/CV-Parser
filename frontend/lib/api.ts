@@ -104,8 +104,14 @@ export interface ApiSettingsStatus {
   backend_url_hint: string
   google_sheets_configured: boolean
   google_service_account_file_present: boolean
+  google_service_account_json_present: boolean
   google_sheets_tab_name: string
   google_sheets_spreadsheet_id: string | null
+}
+
+export interface ApiGoogleSheetsSyncResponse {
+  synced_candidates: number
+  message: string
 }
 
 export interface ApiWorkerUser {
@@ -552,6 +558,16 @@ export async function fetchSettingsStatus() {
   return apiFetch<ApiSettingsStatus>("/api/v1/settings/status", undefined, {
     auth: true,
   })
+}
+
+export async function resyncGoogleSheets() {
+  return apiFetch<ApiGoogleSheetsSyncResponse>(
+    "/api/v1/settings/google-sheets/resync",
+    {
+      method: "POST",
+    },
+    { auth: true }
+  )
 }
 
 export async function createWorkerLogin(input: {

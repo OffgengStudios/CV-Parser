@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -31,8 +32,18 @@ ANALYTICS_HEADERS = [
 
 def is_configured() -> bool:
     return bool(
-        settings.GOOGLE_SERVICE_ACCOUNT_FILE
+        (settings.GOOGLE_SERVICE_ACCOUNT_FILE or settings.GOOGLE_SERVICE_ACCOUNT_JSON)
         and settings.GOOGLE_SHEETS_SPREADSHEET_ID
+    )
+
+
+def has_credentials() -> bool:
+    return bool(
+        settings.GOOGLE_SERVICE_ACCOUNT_JSON
+        or (
+            settings.GOOGLE_SERVICE_ACCOUNT_FILE
+            and settings.GOOGLE_SERVICE_ACCOUNT_FILE.exists()
+        )
     )
 
 
@@ -69,11 +80,6 @@ def _get_service():
     if not is_configured():
         return None
 
-    credentials_path = settings.GOOGLE_SERVICE_ACCOUNT_FILE
-    if credentials_path is None or not credentials_path.exists():
-        log.warning("Google Sheets sync skipped: credentials file not found.")
-        return None
-
     try:
         from google.oauth2.service_account import Credentials
         from googleapiclient.discovery import build
@@ -83,10 +89,26 @@ def _get_service():
         )
         return None
 
-    credentials = Credentials.from_service_account_file(
-        str(credentials_path),
-        scopes=["https://www.googleapis.com/auth/spreadsheets"],
-    )
+    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+    if settings.GOOGLE_SERVICE_ACCOUNT_JSON:
+        try:
+            service_account_info = json.loads(settings.GOOGLE_SERVICE_ACCOUNT_JSON)
+            credentials = Credentials.from_service_account_info(
+                service_account_info,
+                scopes=scopes,
+            )
+        except (json.JSONDecodeError, ValueError, TypeError) as exc:
+            log.warning(f"Google Sheets sync skipped: invalid service account JSON: {exc}")
+            return None
+    else:
+        credentials_path = settings.GOOGLE_SERVICE_ACCOUNT_FILE
+        if credentials_path is None or not credentials_path.exists():
+            log.warning("Google Sheets sync skipped: credentials file not found.")
+            return None
+        credentials = Credentials.from_service_account_file(
+            str(credentials_path),
+            scopes=scopes,
+        )
     return build("sheets", "v4", credentials=credentials)
 
 

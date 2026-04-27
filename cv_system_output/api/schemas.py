@@ -249,8 +249,14 @@ class SettingsStatusResponse(BaseModel):
     backend_url_hint: str
     google_sheets_configured: bool
     google_service_account_file_present: bool
+    google_service_account_json_present: bool = False
     google_sheets_tab_name: str
     google_sheets_spreadsheet_id: Optional[str]
+
+
+class GoogleSheetsSyncResponse(BaseModel):
+    synced_candidates: int
+    message: str
 
 
 # ---------------------------------------------------------------------------
