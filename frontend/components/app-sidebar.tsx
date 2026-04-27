@@ -123,14 +123,16 @@ export function AppSidebar() {
               </p>
             </div>
           )}
-          <Link
-            href="/settings"
-            onClick={() => setMobileOpen(false)}
-            className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
-          >
-            <Settings className="h-5 w-5" />
-            Settings
-          </Link>
+          {isAdmin && (
+            <Link
+              href="/settings"
+              onClick={() => setMobileOpen(false)}
+              className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
+            >
+              <Settings className="h-5 w-5" />
+              Settings
+            </Link>
+          )}
           <button
             onClick={handleLogout}
             className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50"

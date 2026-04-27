@@ -90,6 +90,18 @@ def _ensure_runtime_schema() -> None:
             ddl_statements.append(
                 "ALTER TABLE upload_logs ADD COLUMN saved_upload_filename VARCHAR(255)"
             )
+        if "resolved_at" not in upload_log_columns:
+            ddl_statements.append(
+                "ALTER TABLE upload_logs ADD COLUMN resolved_at DATETIME"
+            )
+        if "resolved_by" not in upload_log_columns:
+            ddl_statements.append(
+                "ALTER TABLE upload_logs ADD COLUMN resolved_by VARCHAR(100)"
+            )
+        if "resolution_note" not in upload_log_columns:
+            ddl_statements.append(
+                "ALTER TABLE upload_logs ADD COLUMN resolution_note TEXT"
+            )
 
     if "worker_users" in inspector.get_table_names():
         worker_user_columns = {

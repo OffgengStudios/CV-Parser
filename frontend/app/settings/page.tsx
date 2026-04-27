@@ -28,6 +28,7 @@ export default function SettingsPage() {
     google_sheets_spreadsheet_id: string | null
   } | null>(null)
   const [isCurrentAdmin, setIsCurrentAdmin] = useState(false)
+  const [checkedAdmin, setCheckedAdmin] = useState(false)
   const [newUsername, setNewUsername] = useState("")
   const [newFullName, setNewFullName] = useState("")
   const [newPassword, setNewPassword] = useState("")
@@ -69,21 +70,26 @@ export default function SettingsPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [healthResponse, settingsResponse, workerProfile] = await Promise.all([
+        const workerProfile = await fetchCurrentWorkerProfile()
+        setIsCurrentAdmin(workerProfile.is_admin)
+        setCheckedAdmin(true)
+
+        if (!workerProfile.is_admin) {
+          return
+        }
+
+        const [healthResponse, settingsResponse] = await Promise.all([
           fetchHealth(),
           fetchSettingsStatus(),
-          fetchCurrentWorkerProfile(),
         ])
         setHealth({
           status: healthResponse.status,
           database: healthResponse.database,
         })
         setSettings(settingsResponse)
-        setIsCurrentAdmin(workerProfile.is_admin)
-        if (workerProfile.is_admin) {
-          loadWorkerLogins()
-        }
+        loadWorkerLogins()
       } catch {
+        setCheckedAdmin(true)
         setHealth({
           status: "offline",
           database: "unknown",
@@ -237,7 +243,16 @@ export default function SettingsPage() {
             </p>
           </div>
 
-          <div className="grid gap-6 max-w-4xl">
+          {!checkedAdmin ? (
+            <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
+              Checking access...
+            </div>
+          ) : !isCurrentAdmin ? (
+            <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
+              Settings are only available to admins.
+            </div>
+          ) : (
+            <div className="grid gap-6 max-w-4xl">
             {isCurrentAdmin && (
               <section className="rounded-lg border border-border bg-card p-6">
                 <div className="mb-5 flex items-center gap-3">
@@ -600,7 +615,8 @@ export default function SettingsPage() {
                 </div>
               </div>
             </section>
-          </div>
+            </div>
+          )}
         </div>
       </main>
     </div>

@@ -209,9 +209,16 @@ class UploadLogOut(BaseModel):
     candidate_id: Optional[str]
     file_size_bytes: Optional[int]
     error_message: Optional[str]
+    resolved_at: Optional[datetime]
+    resolved_by: Optional[str]
+    resolution_note: Optional[str]
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ResolveUploadLogRequest(BaseModel):
+    resolution_note: Optional[str] = None
 
 
 class ActivityLogOut(BaseModel):

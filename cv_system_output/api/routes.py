@@ -67,6 +67,7 @@ from api.schemas import (
     JobMatchRequest,
     JobMatchResponse,
     MatchedCandidateResult,
+    ResolveUploadLogRequest,
     SettingsStatusResponse,
     UploadBatchResponse,
     UploadErrorResponse,
@@ -1080,6 +1081,39 @@ def get_upload_logs(
     return [UploadLogOut.model_validate(entry) for entry in logs]
 
 
+@router.patch("/uploads/logs/{upload_log_id}/resolve", response_model=UploadLogOut, tags=["System"])
+def resolve_upload_log(
+    upload_log_id: int,
+    request: ResolveUploadLogRequest,
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user),
+):
+    """Mark a failed or invalid upload log as resolved."""
+    entry = crud.resolve_upload_log(
+        db=db,
+        upload_log_id=upload_log_id,
+        resolved_by=current_user,
+        resolution_note=request.resolution_note,
+    )
+    if not entry:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Upload log '{upload_log_id}' not found.",
+        )
+
+    crud.log_activity(
+        db=db,
+        worker=current_user,
+        action="resolve_upload_failure",
+        target_type="upload_log",
+        target_id=str(upload_log_id),
+        target_label=entry.filename,
+        status="success",
+        details=request.resolution_note or "Upload failure marked as resolved",
+    )
+    return UploadLogOut.model_validate(entry)
+
+
 @router.get("/activity/logs", response_model=list[ActivityLogOut], tags=["System"])
 def get_activity_logs(
     limit: int = Query(100, ge=1, le=500),
@@ -1093,7 +1127,7 @@ def get_activity_logs(
 
 
 @router.get("/settings/status", response_model=SettingsStatusResponse, tags=["System"])
-def get_settings_status():
+def get_settings_status(admin_user: str = Depends(require_admin_user)):
     credentials_path = settings.GOOGLE_SERVICE_ACCOUNT_FILE
     spreadsheet_id = settings.GOOGLE_SHEETS_SPREADSHEET_ID
 
