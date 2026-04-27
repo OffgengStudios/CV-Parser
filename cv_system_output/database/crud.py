@@ -438,24 +438,6 @@ def list_upload_logs(db: Session, limit: int = 100) -> list[UploadLog]:
     return list(db.execute(stmt).scalars().all())
 
 
-def resolve_upload_log(
-    db: Session,
-    upload_log_id: int,
-    resolved_by: str,
-    resolution_note: Optional[str] = None,
-) -> Optional[UploadLog]:
-    entry = db.get(UploadLog, upload_log_id)
-    if not entry:
-        return None
-    entry.resolved_at = datetime.now(timezone.utc)
-    entry.resolved_by = resolved_by
-    entry.resolution_note = resolution_note.strip() if resolution_note else None
-    db.commit()
-    db.refresh(entry)
-    log.info(f"Upload log resolved: id={upload_log_id}, resolved_by={resolved_by}")
-    return entry
-
-
 # ---------------------------------------------------------------------------
 # Activity log operations
 # ---------------------------------------------------------------------------

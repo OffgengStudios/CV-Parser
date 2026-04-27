@@ -122,9 +122,6 @@ class UploadLog(Base):
         default="success",
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    resolved_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, index=True
     )

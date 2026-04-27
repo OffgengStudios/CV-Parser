@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { useToast } from "@/hooks/use-toast"
-import { createWorkerLogin, deleteOldWorkerLogins, deleteWorkerLogin, fetchCurrentWorkerProfile, fetchHealth, fetchSettingsStatus, fetchWorkerLogins, getApiErrorMessage, resyncGoogleSheets, updateWorkerLoginAdmin, type ApiWorkerUser } from "@/lib/api"
+import { createWorkerLogin, deleteOldWorkerLogins, deleteWorkerLogin, fetchCurrentWorkerProfile, fetchHealth, fetchSettingsStatus, fetchWorkerLogins, getApiErrorMessage, updateWorkerLoginAdmin, type ApiWorkerUser } from "@/lib/api"
 
 const backendUrl =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000"
@@ -24,12 +24,10 @@ export default function SettingsPage() {
     backend_url_hint: string
     google_sheets_configured: boolean
     google_service_account_file_present: boolean
-    google_service_account_json_present: boolean
     google_sheets_tab_name: string
     google_sheets_spreadsheet_id: string | null
   } | null>(null)
   const [isCurrentAdmin, setIsCurrentAdmin] = useState(false)
-  const [checkedAdmin, setCheckedAdmin] = useState(false)
   const [newUsername, setNewUsername] = useState("")
   const [newFullName, setNewFullName] = useState("")
   const [newPassword, setNewPassword] = useState("")
@@ -42,7 +40,6 @@ export default function SettingsPage() {
   const [deletingWorker, setDeletingWorker] = useState<string | null>(null)
   const [deletingOldLogins, setDeletingOldLogins] = useState(false)
   const [updatingAdminWorker, setUpdatingAdminWorker] = useState<string | null>(null)
-  const [syncingSheets, setSyncingSheets] = useState(false)
 
   const statusIcon = health?.status === "ok" ? (
     <CheckCircle2 className="h-5 w-5 text-success" />
@@ -72,26 +69,21 @@ export default function SettingsPage() {
   useEffect(() => {
     async function load() {
       try {
-        const workerProfile = await fetchCurrentWorkerProfile()
-        setIsCurrentAdmin(workerProfile.is_admin)
-        setCheckedAdmin(true)
-
-        if (!workerProfile.is_admin) {
-          return
-        }
-
-        const [healthResponse, settingsResponse] = await Promise.all([
+        const [healthResponse, settingsResponse, workerProfile] = await Promise.all([
           fetchHealth(),
           fetchSettingsStatus(),
+          fetchCurrentWorkerProfile(),
         ])
         setHealth({
           status: healthResponse.status,
           database: healthResponse.database,
         })
         setSettings(settingsResponse)
-        loadWorkerLogins()
+        setIsCurrentAdmin(workerProfile.is_admin)
+        if (workerProfile.is_admin) {
+          loadWorkerLogins()
+        }
       } catch {
-        setCheckedAdmin(true)
         setHealth({
           status: "offline",
           database: "unknown",
@@ -233,25 +225,6 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleResyncGoogleSheets() {
-    setSyncingSheets(true)
-    try {
-      const response = await resyncGoogleSheets()
-      toast({
-        title: "Google Sheet refreshed",
-        description: `${response.synced_candidates} candidates synced.`,
-      })
-    } catch (error) {
-      toast({
-        title: "Google Sheet sync failed",
-        description: getApiErrorMessage(error),
-        variant: "destructive",
-      })
-    } finally {
-      setSyncingSheets(false)
-    }
-  }
-
   return (
     <div className="min-h-screen bg-background">
       <AppSidebar />
@@ -264,16 +237,7 @@ export default function SettingsPage() {
             </p>
           </div>
 
-          {!checkedAdmin ? (
-            <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
-              Checking access...
-            </div>
-          ) : !isCurrentAdmin ? (
-            <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
-              Settings are only available to admins.
-            </div>
-          ) : (
-            <div className="grid gap-6 max-w-4xl">
+          <div className="grid gap-6 max-w-4xl">
             {isCurrentAdmin && (
               <section className="rounded-lg border border-border bg-card p-6">
                 <div className="mb-5 flex items-center gap-3">
@@ -603,23 +567,11 @@ export default function SettingsPage() {
             </section>
 
             <section className="rounded-xl border border-border bg-card p-6">
-              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="flex items-center gap-3">
-                  <Sheet className="h-5 w-5 text-primary" />
-                  <h2 className="text-lg font-semibold text-card-foreground">
-                    Google Sheets
-                  </h2>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleResyncGoogleSheets}
-                  disabled={syncingSheets || !settings?.google_sheets_configured}
-                  className="shrink-0 gap-2"
-                >
-                  <RefreshCcw className={`h-4 w-4 ${syncingSheets ? "animate-spin" : ""}`} />
-                  {syncingSheets ? "Syncing..." : "Resync Sheet"}
-                </Button>
+              <div className="flex items-center gap-3 mb-4">
+                <Sheet className="h-5 w-5 text-primary" />
+                <h2 className="text-lg font-semibold text-card-foreground">
+                  Google Sheets
+                </h2>
               </div>
               <div className="grid gap-3 text-sm">
                 <div className="flex items-center justify-between">
@@ -632,12 +584,6 @@ export default function SettingsPage() {
                   <span className="text-muted-foreground">Credentials file found</span>
                   <span className="font-medium text-card-foreground">
                     {settings?.google_service_account_file_present ? "Yes" : "No"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Credentials env found</span>
-                  <span className="font-medium text-card-foreground">
-                    {settings?.google_service_account_json_present ? "Yes" : "No"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -654,8 +600,7 @@ export default function SettingsPage() {
                 </div>
               </div>
             </section>
-            </div>
-          )}
+          </div>
         </div>
       </main>
     </div>

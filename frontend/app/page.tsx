@@ -23,11 +23,9 @@ import { useToast } from "@/hooks/use-toast"
 import {
   deleteCandidate,
   fetchCandidates,
-  fetchActiveWorkers,
   fetchHealth,
   fetchUploadLogs,
   getApiErrorMessage,
-  resolveUploadLog,
   type ApiUploadLog,
 } from "@/lib/api"
 
@@ -70,21 +68,8 @@ function getStatusBadge(status: string) {
   }
 }
 
-function getUploadBadge(upload: ApiUploadLog) {
-  if (upload.resolved_at) {
-    return (
-      <Badge variant="secondary" className="gap-1">
-        <CheckCircle2 className="h-3 w-3" />
-        Resolved
-      </Badge>
-    )
-  }
-
-  return getStatusBadge(upload.status)
-}
-
 function mapLogStatus(logs: ApiUploadLog[]) {
-  const failed = logs.filter((log) => log.status !== "success" && !log.resolved_at).length
+  const failed = logs.filter((log) => log.status !== "success").length
   const completed = logs.filter((log) => log.status === "success").length
   return { failed, completed }
 }
@@ -98,10 +83,8 @@ export default function DashboardPage() {
     status: string
     database: string
   } | null>(null)
-  const [activeWorkers, setActiveWorkers] = useState(0)
   const [loading, setLoading] = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [resolvingUploadId, setResolvingUploadId] = useState<number | null>(null)
   const [pendingDelete, setPendingDelete] = useState<Candidate | null>(null)
 
   useEffect(() => {
@@ -133,12 +116,6 @@ export default function DashboardPage() {
           status: healthResponse.status,
           database: healthResponse.database,
         })
-        try {
-          const activeWorkerResponse = await fetchActiveWorkers()
-          setActiveWorkers(activeWorkerResponse.active_workers)
-        } catch {
-          setActiveWorkers(0)
-        }
       } catch (error) {
         toast({
           title: "Dashboard unavailable",
@@ -151,31 +128,6 @@ export default function DashboardPage() {
     }
 
     loadDashboard()
-  }, [])
-
-  useEffect(() => {
-    let cancelled = false
-
-    async function loadActiveWorkers() {
-      try {
-        const response = await fetchActiveWorkers()
-        if (!cancelled) {
-          setActiveWorkers(response.active_workers)
-        }
-      } catch {
-        if (!cancelled) {
-          setActiveWorkers(0)
-        }
-      }
-    }
-
-    loadActiveWorkers()
-    const intervalId = window.setInterval(loadActiveWorkers, 10_000)
-
-    return () => {
-      cancelled = true
-      window.clearInterval(intervalId)
-    }
   }, [])
 
   async function handleDeleteCandidate(id: string) {
@@ -211,28 +163,6 @@ export default function DashboardPage() {
     }
   }
 
-  async function handleResolveUpload(upload: ApiUploadLog) {
-    setResolvingUploadId(upload.id)
-    try {
-      const resolved = await resolveUploadLog(upload.id, "Reviewed from dashboard")
-      setLogs((current) =>
-        current.map((log) => log.id === resolved.id ? resolved : log)
-      )
-      toast({
-        title: "Upload resolved",
-        description: `${upload.filename} was marked as resolved.`,
-      })
-    } catch (error) {
-      toast({
-        title: "Resolve failed",
-        description: getApiErrorMessage(error),
-        variant: "destructive",
-      })
-    } finally {
-      setResolvingUploadId(null)
-    }
-  }
-
   const stats = useMemo(() => {
     const { failed, completed } = mapLogStatus(logs)
     return {
@@ -243,7 +173,7 @@ export default function DashboardPage() {
     }
   }, [candidateTotal, logs])
   const recentFailures = useMemo(
-    () => logs.filter((log) => log.status !== "success" && !log.resolved_at).slice(0, 3),
+    () => logs.filter((log) => log.status !== "success").slice(0, 3),
     [logs]
   )
   const successRate = stats.totalUploads
@@ -395,18 +325,7 @@ export default function DashboardPage() {
                           </p>
                         </div>
                         <div className="flex items-center gap-3">
-                          {getUploadBadge(upload)}
-                          {upload.status !== "success" && !upload.resolved_at && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleResolveUpload(upload)}
-                              disabled={resolvingUploadId === upload.id}
-                            >
-                              {resolvingUploadId === upload.id ? "Resolving..." : "Resolve"}
-                            </Button>
-                          )}
+                          {getStatusBadge(upload.status)}
                           <span className="text-xs text-muted-foreground whitespace-nowrap">
                             {formatTimeAgo(upload.created_at)}
                           </span>
@@ -455,7 +374,7 @@ export default function DashboardPage() {
             <div className="flex flex-col gap-6">
               <SystemStatus
                 queueSize={0}
-                activeWorkers={activeWorkers}
+                activeWorkers={health?.status === "ok" ? 1 : 0}
                 processingSpeed={stats.completed}
                 online={health?.status === "ok"}
               />
@@ -474,16 +393,6 @@ export default function DashboardPage() {
                         <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
                           {failure.error_message || "The file could not be processed."}
                         </p>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="mt-2"
-                          onClick={() => handleResolveUpload(failure)}
-                          disabled={resolvingUploadId === failure.id}
-                        >
-                          {resolvingUploadId === failure.id ? "Resolving..." : "Mark Resolved"}
-                        </Button>
                       </div>
                     ))}
                   </div>

@@ -17,7 +17,7 @@ import {
   X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { fetchCurrentWorkerProfile, getCurrentWorker, hasWorkerSession, logoutWorker, sendWorkerHeartbeat } from "@/lib/api"
+import { fetchCurrentWorkerProfile, getCurrentWorker, hasWorkerSession, logoutWorker } from "@/lib/api"
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -67,17 +67,6 @@ export function AppSidebar() {
     if (hasWorkerSession()) {
       loadWorkerProfile()
     }
-  }, [worker])
-
-  useEffect(() => {
-    if (!hasWorkerSession()) return
-
-    sendWorkerHeartbeat().catch(() => {})
-    const intervalId = window.setInterval(() => {
-      sendWorkerHeartbeat().catch(() => {})
-    }, 30_000)
-
-    return () => window.clearInterval(intervalId)
   }, [worker])
 
   function handleLogout() {
@@ -134,16 +123,14 @@ export function AppSidebar() {
               </p>
             </div>
           )}
-          {isAdmin && (
-            <Link
-              href="/settings"
-              onClick={() => setMobileOpen(false)}
-              className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
-            >
-              <Settings className="h-5 w-5" />
-              Settings
-            </Link>
-          )}
+          <Link
+            href="/settings"
+            onClick={() => setMobileOpen(false)}
+            className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
+          >
+            <Settings className="h-5 w-5" />
+            Settings
+          </Link>
           <button
             onClick={handleLogout}
             className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50"

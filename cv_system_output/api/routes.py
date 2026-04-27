@@ -23,7 +23,6 @@ Endpoints:
 """
 import json
 import uuid
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -55,7 +54,6 @@ from classifier.classifier import MAIN_CATEGORIES, TAXONOMY
 from matching import match_candidates
 from api.schemas import (
     ActivityLogOut,
-    ActiveWorkersResponse,
     BatchSummary,
     CandidateCorrectionOut,
     CandidateListItem,
@@ -65,12 +63,10 @@ from api.schemas import (
     CandidateUpdateRequest,
     DuplicateCandidateGroupsOut,
     DuplicateCandidateGroup,
-    GoogleSheetsSyncResponse,
     HealthResponse,
     JobMatchRequest,
     JobMatchResponse,
     MatchedCandidateResult,
-    ResolveUploadLogRequest,
     SettingsStatusResponse,
     UploadBatchResponse,
     UploadErrorResponse,
@@ -82,8 +78,6 @@ from database import crud
 from database.session import get_db
 from google_sheets import (
     append_batch_analytics,
-    GoogleSheetsError,
-    has_credentials,
     replace_main_sheet,
     sync_candidate,
 )
@@ -93,20 +87,6 @@ from parser.extractor import ExtractionError, extract_text, sanitize_text
 log = get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1")
-
-ACTIVE_WORKER_TIMEOUT = timedelta(seconds=90)
-active_worker_heartbeats: dict[str, datetime] = {}
-
-
-def _prune_active_workers() -> None:
-    cutoff = datetime.now(timezone.utc) - ACTIVE_WORKER_TIMEOUT
-    expired_workers = [
-        username
-        for username, last_seen in active_worker_heartbeats.items()
-        if last_seen < cutoff
-    ]
-    for username in expired_workers:
-        del active_worker_heartbeats[username]
 
 
 # ---------------------------------------------------------------------------
@@ -279,8 +259,6 @@ def logout(
     """
     if token_data.jti and token_data.exp:
         revoke_token(token_data.jti, token_data.exp.timestamp())
-    if token_data.user_id:
-        active_worker_heartbeats.pop(token_data.user_id, None)
 
     crud.log_activity(
         db=db,
@@ -313,32 +291,30 @@ def refresh_token(
     return Token(access_token=new_token, expires_in=expires_in)
 
 
-@router.post("/workers/heartbeat", response_model=ActiveWorkersResponse, tags=["System"])
-def worker_heartbeat(current_user: str = Depends(get_current_user)):
-    """Mark the current worker as active and return the active worker count."""
-    active_worker_heartbeats[current_user] = datetime.now(timezone.utc)
-    _prune_active_workers()
-    active_usernames = sorted(active_worker_heartbeats)
-    return ActiveWorkersResponse(
-        active_workers=len(active_usernames),
-        active_usernames=active_usernames,
-    )
-
-
-@router.get("/workers/active", response_model=ActiveWorkersResponse, tags=["System"])
-def get_active_workers(current_user: str = Depends(get_current_user)):
-    """Return workers seen by heartbeat in the last 90 seconds."""
-    _prune_active_workers()
-    active_usernames = sorted(active_worker_heartbeats)
-    return ActiveWorkersResponse(
-        active_workers=len(active_usernames),
-        active_usernames=active_usernames,
-    )
-
-
 # ---------------------------------------------------------------------------
 # Worker management (admin only)
 # ---------------------------------------------------------------------------
+
+@router.get("/admin/users", response_model=list[WorkerUserResponse], tags=["Authentication"])
+def list_worker_users(
+    db: Session = Depends(get_db),
+    admin_user: str = Depends(require_admin_user),
+):
+    """List all worker accounts. Admin only."""
+    users = crud.list_worker_users(db)
+    return [
+        WorkerUserResponse(
+            username=u.username,
+            full_name=u.full_name,
+            is_admin=u.is_admin,
+            is_active=u.is_active,
+            created_by=u.created_by,
+            temporary_password=u.temporary_password,
+            created_at=u.created_at,
+        )
+        for u in users
+    ]
+
 
 @router.delete("/admin/users", tags=["Authentication"])
 def delete_old_worker_logins(
@@ -803,7 +779,7 @@ def update_candidate(
     )
     try:
         sync_candidate(candidate)
-    except (GoogleSheetsError, OSError, RuntimeError, ValueError) as exc:
+    except (OSError, RuntimeError, ValueError) as exc:
         log.warning(f"Google Sheets sync failed after updating '{candidate_id}': {exc}")
 
     return CandidateOut.from_orm_candidate(candidate)
@@ -1104,39 +1080,6 @@ def get_upload_logs(
     return [UploadLogOut.model_validate(entry) for entry in logs]
 
 
-@router.patch("/uploads/logs/{upload_log_id}/resolve", response_model=UploadLogOut, tags=["System"])
-def resolve_upload_log(
-    upload_log_id: int,
-    request: ResolveUploadLogRequest,
-    db: Session = Depends(get_db),
-    current_user: str = Depends(get_current_user),
-):
-    """Mark a failed or invalid upload log as resolved."""
-    entry = crud.resolve_upload_log(
-        db=db,
-        upload_log_id=upload_log_id,
-        resolved_by=current_user,
-        resolution_note=request.resolution_note,
-    )
-    if not entry:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Upload log '{upload_log_id}' not found.",
-        )
-
-    crud.log_activity(
-        db=db,
-        worker=current_user,
-        action="resolve_upload_failure",
-        target_type="upload_log",
-        target_id=str(upload_log_id),
-        target_label=entry.filename,
-        status="success",
-        details=request.resolution_note or "Upload failure marked as resolved",
-    )
-    return UploadLogOut.model_validate(entry)
-
-
 @router.get("/activity/logs", response_model=list[ActivityLogOut], tags=["System"])
 def get_activity_logs(
     limit: int = Query(100, ge=1, le=500),
@@ -1150,54 +1093,18 @@ def get_activity_logs(
 
 
 @router.get("/settings/status", response_model=SettingsStatusResponse, tags=["System"])
-def get_settings_status(admin_user: str = Depends(require_admin_user)):
+def get_settings_status():
     credentials_path = settings.GOOGLE_SERVICE_ACCOUNT_FILE
     spreadsheet_id = settings.GOOGLE_SHEETS_SPREADSHEET_ID
 
     return SettingsStatusResponse(
         backend_url_hint=settings.BACKEND_URL,
-        google_sheets_configured=bool(spreadsheet_id and has_credentials()),
+        google_sheets_configured=bool(credentials_path and spreadsheet_id),
         google_service_account_file_present=bool(
             credentials_path and credentials_path.exists()
         ),
-        google_service_account_json_present=bool(settings.GOOGLE_SERVICE_ACCOUNT_JSON),
         google_sheets_tab_name=settings.GOOGLE_SHEETS_TAB_NAME,
         google_sheets_spreadsheet_id=spreadsheet_id,
-    )
-
-
-@router.post("/settings/google-sheets/resync", response_model=GoogleSheetsSyncResponse, tags=["System"])
-def resync_google_sheets(
-    db: Session = Depends(get_db),
-    admin_user: str = Depends(require_admin_user),
-):
-    """Rewrite the main Google Sheet tab from the current database snapshot."""
-    if not settings.GOOGLE_SHEETS_SPREADSHEET_ID or not has_credentials():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Google Sheets is not configured.",
-        )
-
-    candidates = crud.list_all_candidates(db)
-    try:
-        replace_main_sheet(candidates)
-    except (GoogleSheetsError, OSError, RuntimeError, ValueError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Google Sheets sync failed: {exc}",
-        ) from exc
-
-    crud.log_activity(
-        db=db,
-        worker=admin_user,
-        action="resync_google_sheets",
-        target_type="google_sheet",
-        status="success",
-        details=f"Synced {len(candidates)} candidates",
-    )
-    return GoogleSheetsSyncResponse(
-        synced_candidates=len(candidates),
-        message="Google Sheet refreshed from the current database.",
     )
 
 
