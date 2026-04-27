@@ -92,7 +92,7 @@ def _ensure_runtime_schema() -> None:
             )
         if "resolved_at" not in upload_log_columns:
             ddl_statements.append(
-                "ALTER TABLE upload_logs ADD COLUMN resolved_at DATETIME"
+                "ALTER TABLE upload_logs ADD COLUMN resolved_at TIMESTAMP WITH TIME ZONE"
             )
         if "resolved_by" not in upload_log_columns:
             ddl_statements.append(

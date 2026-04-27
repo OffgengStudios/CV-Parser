@@ -6,7 +6,7 @@ Kept separate from ORM models to decouple API contract from database schema.
 from __future__ import annotations
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +63,7 @@ class CandidateOut(BaseModel):
 class CandidateUpdateRequest(BaseModel):
     """Fields that can be manually corrected after parsing."""
     name: Optional[str] = None
-    email: Optional[EmailStr | str] = None
+    email: Optional[str] = None
     phone: Optional[str] = None
     skills: Optional[list[str]] = None
     experience: Optional[str] = None
