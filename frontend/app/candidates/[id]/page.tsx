@@ -39,6 +39,7 @@ import {
   deleteCandidate,
   fetchCandidate,
   fetchCandidateCvBlob,
+  fetchCurrentWorkerProfile,
   updateCandidate,
   type ApiCandidateDetail,
 } from "@/lib/api"
@@ -88,6 +89,7 @@ export default function CandidateDetailPage({
   const [candidate, setCandidate] = useState<ApiCandidateDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [missing, setMissing] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -112,6 +114,19 @@ export default function CandidateDetailPage({
 
     loadCandidate()
   }, [id])
+
+  useEffect(() => {
+    async function loadWorkerProfile() {
+      try {
+        const profile = await fetchCurrentWorkerProfile()
+        setIsAdmin(profile.is_admin)
+      } catch {
+        setIsAdmin(false)
+      }
+    }
+
+    loadWorkerProfile()
+  }, [])
 
   const initials = useMemo(() => {
     const name = candidate?.name || "Unknown Candidate"
@@ -315,15 +330,17 @@ export default function CandidateDetailPage({
                           </p>
                         </div>
                         <div className="flex flex-wrap justify-end gap-2">
-                          <Button
-                            variant={editing ? "secondary" : "outline"}
-                            className="gap-2"
-                            onClick={() => setEditing((current) => !current)}
-                            disabled={saving}
-                          >
-                            <Edit3 className="h-4 w-4" />
-                            {editing ? "Close Editor" : "Edit Parsed Data"}
-                          </Button>
+                          {isAdmin && (
+                            <Button
+                              variant={editing ? "secondary" : "outline"}
+                              className="gap-2"
+                              onClick={() => setEditing((current) => !current)}
+                              disabled={saving}
+                            >
+                              <Edit3 className="h-4 w-4" />
+                              {editing ? "Close Editor" : "Edit Parsed Data"}
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             className="gap-2"
@@ -391,7 +408,7 @@ export default function CandidateDetailPage({
                   </button>
                 </div>
 
-                {editing && editValues ? (
+                {isAdmin && editing && editValues ? (
                   <form
                     onSubmit={handleSaveCorrections}
                     className="rounded-xl border border-border bg-card p-6"

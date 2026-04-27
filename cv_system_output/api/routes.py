@@ -713,9 +713,9 @@ def update_candidate(
     candidate_id: str,
     request: CandidateUpdateRequest,
     db: Session = Depends(get_db),
-    current_user: str = Depends(get_current_user),
+    admin_user: str = Depends(require_admin_user),
 ):
-    """Correct parsed candidate data for an existing record."""
+    """Correct parsed candidate data for an existing record. Admin only."""
     updates = request.model_dump(exclude_unset=True)
     candidate = crud.update_candidate(db=db, candidate_id=candidate_id, updates=updates)
     if not candidate:
@@ -726,7 +726,7 @@ def update_candidate(
 
     crud.log_activity(
         db=db,
-        worker=current_user,
+        worker=admin_user,
         action="update_candidate",
         target_type="candidate",
         target_id=candidate_id,
