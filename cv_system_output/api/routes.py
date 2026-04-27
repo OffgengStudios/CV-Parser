@@ -82,6 +82,7 @@ from database import crud
 from database.session import get_db
 from google_sheets import (
     append_batch_analytics,
+    GoogleSheetsError,
     has_credentials,
     replace_main_sheet,
     sync_candidate,
@@ -802,7 +803,7 @@ def update_candidate(
     )
     try:
         sync_candidate(candidate)
-    except (OSError, RuntimeError, ValueError) as exc:
+    except (GoogleSheetsError, OSError, RuntimeError, ValueError) as exc:
         log.warning(f"Google Sheets sync failed after updating '{candidate_id}': {exc}")
 
     return CandidateOut.from_orm_candidate(candidate)
@@ -1180,7 +1181,7 @@ def resync_google_sheets(
     candidates = crud.list_all_candidates(db)
     try:
         replace_main_sheet(candidates)
-    except (OSError, RuntimeError, ValueError) as exc:
+    except (GoogleSheetsError, OSError, RuntimeError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Google Sheets sync failed: {exc}",

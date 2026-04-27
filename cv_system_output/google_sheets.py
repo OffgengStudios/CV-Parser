@@ -30,6 +30,11 @@ ANALYTICS_HEADERS = [
 ]
 
 
+class GoogleSheetsError(RuntimeError):
+    """Raised when Google Sheets is configured but the API request fails."""
+    pass
+
+
 def is_configured() -> bool:
     return bool(
         (settings.GOOGLE_SERVICE_ACCOUNT_FILE or settings.GOOGLE_SERVICE_ACCOUNT_JSON)
@@ -109,31 +114,109 @@ def _get_service():
             str(credentials_path),
             scopes=scopes,
         )
-    return build("sheets", "v4", credentials=credentials)
+    try:
+        return build("sheets", "v4", credentials=credentials, cache_discovery=False)
+    except Exception as exc:
+        raise GoogleSheetsError(f"Could not create Google Sheets client: {exc}") from exc
+
+
+def _google_error_message(exc: Exception) -> str:
+    status_code = getattr(getattr(exc, "resp", None), "status", None)
+    reason = getattr(getattr(exc, "resp", None), "reason", None)
+    content = getattr(exc, "content", None)
+    if isinstance(content, bytes):
+        content = content.decode("utf-8", errors="replace")
+
+    parts = []
+    if status_code:
+        parts.append(f"HTTP {status_code}")
+    if reason:
+        parts.append(str(reason))
+    if content:
+        parts.append(str(content))
+    return ": ".join(parts) if parts else str(exc)
+
+
+def _execute(request: Any, action: str) -> dict[str, Any]:
+    try:
+        return request.execute()
+    except Exception as exc:
+        raise GoogleSheetsError(f"{action} failed: {_google_error_message(exc)}") from exc
+
+
+def _get_sheet_id(service: Any, tab_name: str) -> int | None:
+    spreadsheet = _execute(
+        service.spreadsheets().get(
+            spreadsheetId=settings.GOOGLE_SHEETS_SPREADSHEET_ID,
+            includeGridData=False,
+        ),
+        "Reading spreadsheet metadata",
+    )
+    for sheet in spreadsheet.get("sheets", []):
+        properties = sheet.get("properties", {})
+        if properties.get("title") == tab_name:
+            return properties.get("sheetId")
+    return None
+
+
+def _ensure_sheet_exists(service: Any, tab_name: str) -> int:
+    sheet_id = _get_sheet_id(service, tab_name)
+    if sheet_id is not None:
+        return sheet_id
+
+    response = _execute(
+        service.spreadsheets().batchUpdate(
+            spreadsheetId=settings.GOOGLE_SHEETS_SPREADSHEET_ID,
+            body={
+                "requests": [
+                    {
+                        "addSheet": {
+                            "properties": {
+                                "title": tab_name,
+                            }
+                        }
+                    }
+                ]
+            },
+        ),
+        f"Creating Google Sheet tab '{tab_name}'",
+    )
+    replies = response.get("replies", [])
+    return replies[0]["addSheet"]["properties"]["sheetId"]
 
 
 def _ensure_header_row(service: Any, tab_name: str, headers: list[str]) -> None:
-    response = service.spreadsheets().values().get(
-        spreadsheetId=settings.GOOGLE_SHEETS_SPREADSHEET_ID,
-        range=_sheet_range(tab_name, "1:1"),
-    ).execute()
+    _ensure_sheet_exists(service, tab_name)
+    response = _execute(
+        service.spreadsheets().values().get(
+            spreadsheetId=settings.GOOGLE_SHEETS_SPREADSHEET_ID,
+            range=_sheet_range(tab_name, "1:1"),
+        ),
+        f"Reading header row for '{tab_name}'",
+    )
     values = response.get("values", [])
     if values and values[0] == headers:
         return
 
-    service.spreadsheets().values().update(
-        spreadsheetId=settings.GOOGLE_SHEETS_SPREADSHEET_ID,
-        range=_sheet_range(tab_name, f"A1:{_column_letter(len(headers))}1"),
-        valueInputOption="RAW",
-        body={"values": [headers]},
-    ).execute()
+    _execute(
+        service.spreadsheets().values().update(
+            spreadsheetId=settings.GOOGLE_SHEETS_SPREADSHEET_ID,
+            range=_sheet_range(tab_name, f"A1:{_column_letter(len(headers))}1"),
+            valueInputOption="RAW",
+            body={"values": [headers]},
+        ),
+        f"Writing header row for '{tab_name}'",
+    )
 
 
 def _find_candidate_row(service: Any, candidate: "Candidate") -> int | None:
-    response = service.spreadsheets().values().get(
-        spreadsheetId=settings.GOOGLE_SHEETS_SPREADSHEET_ID,
-        range=_sheet_range(settings.GOOGLE_SHEETS_TAB_NAME, "A:G"),
-    ).execute()
+    response = _execute(
+        service.spreadsheets().values().get(
+            spreadsheetId=settings.GOOGLE_SHEETS_SPREADSHEET_ID,
+            range=_sheet_range(settings.GOOGLE_SHEETS_TAB_NAME, "A:G"),
+        ),
+        "Reading candidate rows from Google Sheets",
+    )
     values = response.get("values", [])
 
     for index, row in enumerate(values, start=1):
@@ -156,25 +239,31 @@ def sync_candidate(candidate: "Candidate") -> None:
     last_column = _column_letter(len(SHEET_HEADERS))
 
     if row_index is None:
-        service.spreadsheets().values().append(
-            spreadsheetId=settings.GOOGLE_SHEETS_SPREADSHEET_ID,
-            range=_sheet_range(settings.GOOGLE_SHEETS_TAB_NAME, f"A:{last_column}"),
-            valueInputOption="USER_ENTERED",
-            insertDataOption="INSERT_ROWS",
-            body={"values": values},
-        ).execute()
+        _execute(
+            service.spreadsheets().values().append(
+                spreadsheetId=settings.GOOGLE_SHEETS_SPREADSHEET_ID,
+                range=_sheet_range(settings.GOOGLE_SHEETS_TAB_NAME, f"A:{last_column}"),
+                valueInputOption="USER_ENTERED",
+                insertDataOption="INSERT_ROWS",
+                body={"values": values},
+            ),
+            "Appending candidate to Google Sheets",
+        )
         log.info("Candidate synced to Google Sheets (append): id=%s", candidate.id)
         return
 
-    service.spreadsheets().values().update(
-        spreadsheetId=settings.GOOGLE_SHEETS_SPREADSHEET_ID,
-        range=_sheet_range(
-            settings.GOOGLE_SHEETS_TAB_NAME,
-            f"A{row_index}:{last_column}{row_index}",
+    _execute(
+        service.spreadsheets().values().update(
+            spreadsheetId=settings.GOOGLE_SHEETS_SPREADSHEET_ID,
+            range=_sheet_range(
+                settings.GOOGLE_SHEETS_TAB_NAME,
+                f"A{row_index}:{last_column}{row_index}",
+            ),
+            valueInputOption="USER_ENTERED",
+            body={"values": values},
         ),
-        valueInputOption="USER_ENTERED",
-        body={"values": values},
-    ).execute()
+        "Updating candidate in Google Sheets",
+    )
     log.info("Candidate synced to Google Sheets (update): id=%s", candidate.id)
 
 
@@ -185,20 +274,27 @@ def replace_main_sheet(candidates: list["Candidate"]) -> None:
 
     values = build_main_sheet_values(candidates)
     last_column = _column_letter(len(SHEET_HEADERS))
-    service.spreadsheets().values().clear(
-        spreadsheetId=settings.GOOGLE_SHEETS_SPREADSHEET_ID,
-        range=_sheet_range(settings.GOOGLE_SHEETS_TAB_NAME, f"A:{last_column}"),
-        body={},
-    ).execute()
-    service.spreadsheets().values().update(
-        spreadsheetId=settings.GOOGLE_SHEETS_SPREADSHEET_ID,
-        range=_sheet_range(
-            settings.GOOGLE_SHEETS_TAB_NAME,
-            f"A1:{last_column}{len(values)}",
+    _ensure_sheet_exists(service, settings.GOOGLE_SHEETS_TAB_NAME)
+    _execute(
+        service.spreadsheets().values().clear(
+            spreadsheetId=settings.GOOGLE_SHEETS_SPREADSHEET_ID,
+            range=_sheet_range(settings.GOOGLE_SHEETS_TAB_NAME, f"A:{last_column}"),
+            body={},
         ),
-        valueInputOption="USER_ENTERED",
-        body={"values": values},
-    ).execute()
+        "Clearing main Google Sheet tab",
+    )
+    _execute(
+        service.spreadsheets().values().update(
+            spreadsheetId=settings.GOOGLE_SHEETS_SPREADSHEET_ID,
+            range=_sheet_range(
+                settings.GOOGLE_SHEETS_TAB_NAME,
+                f"A1:{last_column}{len(values)}",
+            ),
+            valueInputOption="USER_ENTERED",
+            body={"values": values},
+        ),
+        "Writing main Google Sheet tab",
+    )
     log.info(
         "Google Sheets main tab replaced from database snapshot: %s candidates",
         len(candidates),
@@ -211,10 +307,13 @@ def delete_candidate(candidate_id: str) -> None:
         return
 
     _ensure_header_row(service, settings.GOOGLE_SHEETS_TAB_NAME, SHEET_HEADERS)
-    response = service.spreadsheets().values().get(
-        spreadsheetId=settings.GOOGLE_SHEETS_SPREADSHEET_ID,
-        range=_sheet_range(settings.GOOGLE_SHEETS_TAB_NAME, "A:G"),
-    ).execute()
+    response = _execute(
+        service.spreadsheets().values().get(
+            spreadsheetId=settings.GOOGLE_SHEETS_SPREADSHEET_ID,
+            range=_sheet_range(settings.GOOGLE_SHEETS_TAB_NAME, "A:G"),
+        ),
+        "Reading candidate rows from Google Sheets",
+    )
     values = response.get("values", [])
     row_index = None
     for index, row in enumerate(values, start=1):
@@ -228,33 +327,28 @@ def delete_candidate(candidate_id: str) -> None:
     if row_index is None or row_index == 1:
         return
 
-    spreadsheet = service.spreadsheets().get(
-        spreadsheetId=settings.GOOGLE_SHEETS_SPREADSHEET_ID
-    ).execute()
-    sheet_id = spreadsheet["sheets"][0]["properties"]["sheetId"]
+    sheet_id = _ensure_sheet_exists(service, settings.GOOGLE_SHEETS_TAB_NAME)
 
-    for sheet in spreadsheet["sheets"]:
-        if sheet["properties"]["title"] == settings.GOOGLE_SHEETS_TAB_NAME:
-            sheet_id = sheet["properties"]["sheetId"]
-            break
-
-    service.spreadsheets().batchUpdate(
-        spreadsheetId=settings.GOOGLE_SHEETS_SPREADSHEET_ID,
-        body={
-            "requests": [
-                {
-                    "deleteDimension": {
-                        "range": {
-                            "sheetId": sheet_id,
-                            "dimension": "ROWS",
-                            "startIndex": row_index - 1,
-                            "endIndex": row_index,
+    _execute(
+        service.spreadsheets().batchUpdate(
+            spreadsheetId=settings.GOOGLE_SHEETS_SPREADSHEET_ID,
+            body={
+                "requests": [
+                    {
+                        "deleteDimension": {
+                            "range": {
+                                "sheetId": sheet_id,
+                                "dimension": "ROWS",
+                                "startIndex": row_index - 1,
+                                "endIndex": row_index,
+                            }
                         }
                     }
-                }
-            ]
-        },
-    ).execute()
+                ]
+            },
+        ),
+        "Deleting candidate row from Google Sheets",
+    )
     log.info("Candidate removed from Google Sheets: id=%s", candidate_id)
 
 
@@ -286,11 +380,14 @@ def append_batch_analytics(summary: dict[str, object]) -> None:
         settings.GOOGLE_SHEETS_ANALYTICS_TAB_NAME,
         ANALYTICS_HEADERS,
     )
-    service.spreadsheets().values().append(
-        spreadsheetId=settings.GOOGLE_SHEETS_SPREADSHEET_ID,
-        range=_sheet_range(settings.GOOGLE_SHEETS_ANALYTICS_TAB_NAME, "A:D"),
-        valueInputOption="USER_ENTERED",
-        insertDataOption="INSERT_ROWS",
-        body={"values": rows},
-    ).execute()
+    _execute(
+        service.spreadsheets().values().append(
+            spreadsheetId=settings.GOOGLE_SHEETS_SPREADSHEET_ID,
+            range=_sheet_range(settings.GOOGLE_SHEETS_ANALYTICS_TAB_NAME, "A:D"),
+            valueInputOption="USER_ENTERED",
+            insertDataOption="INSERT_ROWS",
+            body={"values": rows},
+        ),
+        "Appending batch analytics to Google Sheets",
+    )
     log.info("Batch analytics appended to Google Sheets: %s", batch_timestamp)
