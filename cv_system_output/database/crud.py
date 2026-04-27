@@ -70,6 +70,47 @@ def deactivate_worker_user(db: Session, username: str) -> Optional[WorkerUser]:
     return user
 
 
+def delete_worker_user(db: Session, username: str) -> bool:
+    """Permanently delete a worker account."""
+    user = get_worker_user(db, username)
+    if user is None:
+        return False
+    db.delete(user)
+    db.commit()
+    log.info(f"Worker user deleted: username={username}")
+    return True
+
+
+def delete_worker_users(db: Session, exclude_usernames: set[str] | None = None) -> list[str]:
+    """Permanently delete all worker accounts except excluded usernames."""
+    excluded = exclude_usernames or set()
+    users = [
+        user
+        for user in list_worker_users(db)
+        if user.username not in excluded
+    ]
+    deleted_usernames = [user.username for user in users]
+
+    for user in users:
+        db.delete(user)
+
+    db.commit()
+    log.info(f"Worker users deleted: count={len(deleted_usernames)}")
+    return deleted_usernames
+
+
+def update_worker_user_admin(db: Session, username: str, is_admin: bool) -> Optional[WorkerUser]:
+    """Update a worker account's admin access."""
+    user = get_worker_user(db, username)
+    if user is None:
+        return None
+    user.is_admin = is_admin
+    db.commit()
+    db.refresh(user)
+    log.info(f"Worker user admin access updated: username={username}, is_admin={is_admin}")
+    return user
+
+
 def update_worker_password(db: Session, username: str, new_password_hash: str) -> Optional[WorkerUser]:
     """
     Replace a worker's password hash. Returns the user, or None if not found.

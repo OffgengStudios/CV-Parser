@@ -115,6 +115,11 @@ class ResetPasswordRequest(BaseModel):
     new_password: str
 
 
+class UpdateWorkerUserRequest(BaseModel):
+    """Admin request to update worker login permissions."""
+    is_admin: bool
+
+
 class WorkerUserResponse(BaseModel):
     """Worker user response without secret fields."""
     username: str

@@ -531,6 +531,32 @@ export async function deactivateWorkerUser(username: string) {
   }
 }
 
+export const deleteWorkerLogin = deactivateWorkerUser
+
+export async function deleteOldWorkerLogins() {
+  return apiFetch<{ deleted_count: number; deleted_usernames: string[] }>(
+    "/api/v1/admin/users",
+    {
+      method: "DELETE",
+    },
+    { auth: true }
+  )
+}
+
+export async function updateWorkerLoginAdmin(username: string, isAdmin: boolean) {
+  return apiFetch<ApiWorkerUser>(
+    `/api/v1/admin/users/${encodeURIComponent(username)}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ is_admin: isAdmin }),
+    },
+    { auth: true }
+  )
+}
+
 export async function resetWorkerPassword(username: string, newPassword: string) {
   const response = await fetch(
     `${API_BASE_URL}/api/v1/admin/users/${encodeURIComponent(username)}/reset-password`,

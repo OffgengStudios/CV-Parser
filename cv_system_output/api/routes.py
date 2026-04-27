@@ -39,6 +39,7 @@ from auth import (
     ResetPasswordRequest,
     Token,
     TokenData,
+    UpdateWorkerUserRequest,
     WorkerUserResponse,
     create_access_token,
     get_current_user,
@@ -304,44 +305,109 @@ def list_worker_users(
             is_admin=u.is_admin,
             is_active=u.is_active,
             created_by=u.created_by,
+            temporary_password=u.temporary_password,
             created_at=u.created_at,
         )
         for u in users
     ]
 
 
-@router.delete("/admin/users/{username}", status_code=status.HTTP_204_NO_CONTENT, tags=["Authentication"])
-def deactivate_worker_user(
-    username: str,
+@router.delete("/admin/users", tags=["Authentication"])
+def delete_old_worker_logins(
     db: Session = Depends(get_db),
     admin_user: str = Depends(require_admin_user),
 ):
-    """
-    Deactivate a worker account (soft delete).
+    """Permanently delete all stored worker logins except the current admin account."""
+    deleted_usernames = crud.delete_worker_users(db, exclude_usernames={admin_user})
+    crud.log_activity(
+        db=db,
+        worker=admin_user,
+        action="delete_old_worker_logins",
+        target_type="worker_user",
+        status="success",
+        details=f"Admin user deleted {len(deleted_usernames)} worker logins",
+    )
+    return {
+        "deleted_count": len(deleted_usernames),
+        "deleted_usernames": deleted_usernames,
+    }
 
-    The worker can no longer log in, but their activity history is preserved.
-    Built-in users (admin, demo) cannot be deactivated.
-    """
+
+@router.patch("/admin/users/{username}", response_model=WorkerUserResponse, tags=["Authentication"])
+def update_worker_login(
+    username: str,
+    request: UpdateWorkerUserRequest,
+    db: Session = Depends(get_db),
+    admin_user: str = Depends(require_admin_user),
+):
+    """Update a worker account's admin access. Admin only."""
     username = username.strip().lower()
     if is_builtin_user(username):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Built-in accounts cannot be deactivated.",
+            detail="Built-in account permissions cannot be changed.",
         )
-    if username == admin_user:
+    if username == admin_user and not request.is_admin:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You cannot deactivate your own account.",
+            detail="You cannot remove admin access from your own account.",
         )
 
-    user = crud.deactivate_worker_user(db, username)
+    user = crud.update_worker_user_admin(db, username, request.is_admin)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Worker not found.")
 
     crud.log_activity(
         db=db,
         worker=admin_user,
-        action="deactivate_worker",
+        action="update_worker_admin",
+        target_type="worker_user",
+        target_label=username,
+        status="success",
+        details=f"Admin access set to {request.is_admin}",
+    )
+    return WorkerUserResponse(
+        username=user.username,
+        full_name=user.full_name,
+        is_admin=user.is_admin,
+        is_active=user.is_active,
+        created_by=user.created_by,
+        temporary_password=user.temporary_password,
+        created_at=user.created_at,
+    )
+
+
+@router.delete("/admin/users/{username}", status_code=status.HTTP_204_NO_CONTENT, tags=["Authentication"])
+def delete_worker_login(
+    username: str,
+    db: Session = Depends(get_db),
+    admin_user: str = Depends(require_admin_user),
+):
+    """
+    Permanently delete a worker account.
+
+    Built-in users (admin, demo) cannot be deleted.
+    """
+    username = username.strip().lower()
+    if is_builtin_user(username):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Built-in accounts cannot be deleted.",
+        )
+    if username == admin_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot delete your own account.",
+        )
+
+    deleted = crud.delete_worker_user(db, username)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Worker not found.")
+
+    crud.log_activity(
+        db=db,
+        worker=admin_user,
+        action="delete_worker_login",
         target_type="worker_user",
         target_label=username,
         status="success",
