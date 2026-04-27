@@ -25,9 +25,25 @@ export interface ApiCandidateDetail {
   category: string | null
   subcategory: string | null
   confidence: number | null
+  years_experience: number | null
+  seniority_level: string | null
   source_filename: string | null
   has_cv_file: boolean
   created_at: string
+}
+
+export interface ApiCandidateUpdate {
+  name?: string | null
+  email?: string | null
+  phone?: string | null
+  skills?: string[]
+  experience?: string | null
+  education?: string | null
+  category?: string | null
+  subcategory?: string | null
+  confidence?: number | null
+  years_experience?: number | null
+  seniority_level?: string | null
 }
 
 export interface ApiCandidateListResponse {
@@ -418,6 +434,20 @@ export async function fetchCandidate(id: string) {
   return apiFetch<ApiCandidateDetail>(`/api/v1/candidates/${id}`, undefined, {
     auth: true,
   })
+}
+
+export async function updateCandidate(id: string, input: ApiCandidateUpdate) {
+  return apiFetch<ApiCandidateDetail>(
+    `/api/v1/candidates/${id}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+    },
+    { auth: true }
+  )
 }
 
 export async function fetchCandidateCvBlob(id: string, download = false) {

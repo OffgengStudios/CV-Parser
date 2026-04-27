@@ -181,6 +181,31 @@ def get_candidate(db: Session, candidate_id: str) -> Optional[Candidate]:
     return db.get(Candidate, candidate_id)
 
 
+def update_candidate(
+    db: Session,
+    candidate_id: str,
+    updates: dict,
+) -> Optional[Candidate]:
+    candidate = db.get(Candidate, candidate_id)
+    if not candidate:
+        return None
+
+    skills = updates.pop("skills", None)
+    for field_name, value in updates.items():
+        setattr(candidate, field_name, value)
+
+    if skills is not None:
+        candidate.skills.clear()
+        db.flush()
+        for skill_name in skills:
+            candidate.skills.append(CandidateSkill(skill=skill_name))
+
+    db.commit()
+    db.refresh(candidate)
+    log.info(f"Candidate updated: id={candidate_id}")
+    return candidate
+
+
 def list_candidates(
     db: Session,
     category: Optional[str] = None,

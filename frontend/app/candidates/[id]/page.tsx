@@ -1,12 +1,13 @@
 "use client"
 
-import { use, useEffect, useMemo, useState } from "react"
+import { FormEvent, use, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { notFound, useRouter } from "next/navigation"
 import {
   ArrowLeft,
   Calendar,
   Download,
+  Edit3,
   Eye,
   FileText,
   GraduationCap,
@@ -29,16 +30,51 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import {
   deleteCandidate,
   fetchCandidate,
   fetchCandidateCvBlob,
+  updateCandidate,
   type ApiCandidateDetail,
 } from "@/lib/api"
 
 type ViewMode = "parsed" | "raw"
+type EditValues = {
+  name: string
+  email: string
+  phone: string
+  category: string
+  subcategory: string
+  confidencePercent: string
+  yearsExperience: string
+  seniorityLevel: string
+  skills: string
+  experience: string
+  education: string
+}
+
+function toEditValues(candidate: ApiCandidateDetail): EditValues {
+  return {
+    name: candidate.name || "",
+    email: candidate.email || "",
+    phone: candidate.phone || "",
+    category: candidate.category || "",
+    subcategory: candidate.subcategory || "",
+    confidencePercent:
+      candidate.confidence == null ? "" : String(Math.round(candidate.confidence * 100)),
+    yearsExperience:
+      candidate.years_experience == null ? "" : String(candidate.years_experience),
+    seniorityLevel: candidate.seniority_level || "",
+    skills: candidate.skills.join(", "),
+    experience: candidate.experience || "",
+    education: candidate.education || "",
+  }
+}
 
 export default function CandidateDetailPage({
   params,
@@ -53,6 +89,9 @@ export default function CandidateDetailPage({
   const [loading, setLoading] = useState(true)
   const [missing, setMissing] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [editValues, setEditValues] = useState<EditValues | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [cvLoading, setCvLoading] = useState<"view" | "download" | null>(null)
 
@@ -63,6 +102,7 @@ export default function CandidateDetailPage({
       try {
         const response = await fetchCandidate(id)
         setCandidate(response)
+        setEditValues(toEditValues(response))
       } catch {
         setMissing(true)
       } finally {
@@ -106,6 +146,58 @@ export default function CandidateDetailPage({
     } finally {
       setDeleting(false)
       setConfirmOpen(false)
+    }
+  }
+
+  function updateEditValue(field: keyof EditValues, value: string) {
+    setEditValues((current) => current ? { ...current, [field]: value } : current)
+  }
+
+  async function handleSaveCorrections(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!candidate || !editValues) return
+
+    const skills = editValues.skills
+      .split(/[\n,]+/)
+      .map((skill) => skill.trim())
+      .filter(Boolean)
+    const confidence = editValues.confidencePercent.trim()
+      ? Number(editValues.confidencePercent) / 100
+      : null
+    const yearsExperience = editValues.yearsExperience.trim()
+      ? Number(editValues.yearsExperience)
+      : null
+
+    setSaving(true)
+    try {
+      const updated = await updateCandidate(candidate.id, {
+        name: editValues.name,
+        email: editValues.email,
+        phone: editValues.phone,
+        category: editValues.category,
+        subcategory: editValues.subcategory,
+        confidence,
+        years_experience: yearsExperience,
+        seniority_level: editValues.seniorityLevel,
+        skills,
+        experience: editValues.experience,
+        education: editValues.education,
+      })
+      setCandidate(updated)
+      setEditValues(toEditValues(updated))
+      setEditing(false)
+      toast({
+        title: "Candidate updated",
+        description: "The parsed data correction was saved.",
+      })
+    } catch {
+      toast({
+        title: "Correction failed",
+        description: "The candidate could not be updated.",
+        variant: "destructive",
+      })
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -224,6 +316,15 @@ export default function CandidateDetailPage({
                         </div>
                         <div className="flex flex-wrap justify-end gap-2">
                           <Button
+                            variant={editing ? "secondary" : "outline"}
+                            className="gap-2"
+                            onClick={() => setEditing((current) => !current)}
+                            disabled={saving}
+                          >
+                            <Edit3 className="h-4 w-4" />
+                            {editing ? "Close Editor" : "Edit Parsed Data"}
+                          </Button>
+                          <Button
                             variant="outline"
                             className="gap-2"
                             onClick={handleViewCv}
@@ -290,7 +391,137 @@ export default function CandidateDetailPage({
                   </button>
                 </div>
 
-                {viewMode === "parsed" ? (
+                {editing && editValues ? (
+                  <form
+                    onSubmit={handleSaveCorrections}
+                    className="rounded-xl border border-border bg-card p-6"
+                  >
+                    <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <h2 className="text-lg font-semibold text-card-foreground">
+                        Correct Parsed Data
+                      </h2>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            setEditValues(toEditValues(candidate))
+                            setEditing(false)
+                          }}
+                          disabled={saving}
+                        >
+                          Cancel
+                        </Button>
+                        <Button type="submit" disabled={saving}>
+                          {saving ? "Saving..." : "Save Corrections"}
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="grid gap-2">
+                        <Label htmlFor="candidate-name">Name</Label>
+                        <Input
+                          id="candidate-name"
+                          value={editValues.name}
+                          onChange={(event) => updateEditValue("name", event.target.value)}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="candidate-email">Email</Label>
+                        <Input
+                          id="candidate-email"
+                          type="email"
+                          value={editValues.email}
+                          onChange={(event) => updateEditValue("email", event.target.value)}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="candidate-phone">Phone</Label>
+                        <Input
+                          id="candidate-phone"
+                          value={editValues.phone}
+                          onChange={(event) => updateEditValue("phone", event.target.value)}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="candidate-category">Category</Label>
+                        <Input
+                          id="candidate-category"
+                          value={editValues.category}
+                          onChange={(event) => updateEditValue("category", event.target.value)}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="candidate-subcategory">Subcategory</Label>
+                        <Input
+                          id="candidate-subcategory"
+                          value={editValues.subcategory}
+                          onChange={(event) => updateEditValue("subcategory", event.target.value)}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="candidate-seniority">Seniority</Label>
+                        <Input
+                          id="candidate-seniority"
+                          value={editValues.seniorityLevel}
+                          onChange={(event) => updateEditValue("seniorityLevel", event.target.value)}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="candidate-years">Years experience</Label>
+                        <Input
+                          id="candidate-years"
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={editValues.yearsExperience}
+                          onChange={(event) => updateEditValue("yearsExperience", event.target.value)}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="candidate-confidence">Confidence percent</Label>
+                        <Input
+                          id="candidate-confidence"
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="1"
+                          value={editValues.confidencePercent}
+                          onChange={(event) => updateEditValue("confidencePercent", event.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid gap-2">
+                      <Label htmlFor="candidate-skills">Skills</Label>
+                      <Textarea
+                        id="candidate-skills"
+                        value={editValues.skills}
+                        onChange={(event) => updateEditValue("skills", event.target.value)}
+                        rows={3}
+                      />
+                    </div>
+                    <div className="mt-4 grid gap-2">
+                      <Label htmlFor="candidate-experience">Experience</Label>
+                      <Textarea
+                        id="candidate-experience"
+                        value={editValues.experience}
+                        onChange={(event) => updateEditValue("experience", event.target.value)}
+                        rows={6}
+                      />
+                    </div>
+                    <div className="mt-4 grid gap-2">
+                      <Label htmlFor="candidate-education">Education</Label>
+                      <Textarea
+                        id="candidate-education"
+                        value={editValues.education}
+                        onChange={(event) => updateEditValue("education", event.target.value)}
+                        rows={4}
+                      />
+                    </div>
+                  </form>
+                ) : viewMode === "parsed" ? (
                   <>
                     <div className="rounded-xl border border-border bg-card p-6">
                       <h2 className="text-lg font-semibold text-card-foreground mb-3">

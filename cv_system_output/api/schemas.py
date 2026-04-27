@@ -60,6 +60,43 @@ class CandidateOut(BaseModel):
         )
 
 
+class CandidateUpdateRequest(BaseModel):
+    """Fields that can be manually corrected after parsing."""
+    name: Optional[str] = None
+    email: Optional[EmailStr | str] = None
+    phone: Optional[str] = None
+    skills: Optional[list[str]] = None
+    experience: Optional[str] = None
+    education: Optional[str] = None
+    category: Optional[str] = None
+    subcategory: Optional[str] = None
+    confidence: Optional[float] = Field(None, ge=0.0, le=1.0)
+    years_experience: Optional[float] = Field(None, ge=0.0)
+    seniority_level: Optional[str] = None
+
+    @model_validator(mode="after")
+    def normalize_blank_strings(self) -> "CandidateUpdateRequest":
+        for field_name in (
+            "name",
+            "email",
+            "phone",
+            "experience",
+            "education",
+            "category",
+            "subcategory",
+            "seniority_level",
+        ):
+            value = getattr(self, field_name)
+            if isinstance(value, str):
+                stripped = value.strip()
+                setattr(self, field_name, stripped or None)
+
+        if self.skills is not None:
+            self.skills = [skill.strip() for skill in self.skills if skill.strip()]
+
+        return self
+
+
 class CandidateListItem(BaseModel):
     """Lightweight candidate representation for list responses."""
     id: str

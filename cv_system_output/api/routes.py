@@ -58,6 +58,7 @@ from api.schemas import (
     CandidateListItem,
     CandidateListOut,
     CandidateOut,
+    CandidateUpdateRequest,
     DuplicateCandidateGroupsOut,
     DuplicateCandidateGroup,
     HealthResponse,
@@ -76,6 +77,7 @@ from database.session import get_db
 from google_sheets import (
     append_batch_analytics,
     replace_main_sheet,
+    sync_candidate,
 )
 from logger import get_logger
 from parser.extractor import ExtractionError, extract_text, sanitize_text
@@ -703,6 +705,40 @@ def get_candidate(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Candidate '{candidate_id}' not found.",
         )
+    return CandidateOut.from_orm_candidate(candidate)
+
+
+@router.patch("/candidates/{candidate_id}", response_model=CandidateOut, tags=["Candidates"])
+def update_candidate(
+    candidate_id: str,
+    request: CandidateUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user),
+):
+    """Correct parsed candidate data for an existing record."""
+    updates = request.model_dump(exclude_unset=True)
+    candidate = crud.update_candidate(db=db, candidate_id=candidate_id, updates=updates)
+    if not candidate:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Candidate '{candidate_id}' not found.",
+        )
+
+    crud.log_activity(
+        db=db,
+        worker=current_user,
+        action="update_candidate",
+        target_type="candidate",
+        target_id=candidate_id,
+        target_label=candidate.name or candidate.source_filename,
+        status="success",
+        details="Parsed candidate data corrected",
+    )
+    try:
+        sync_candidate(candidate)
+    except (OSError, RuntimeError, ValueError) as exc:
+        log.warning(f"Google Sheets sync failed after updating '{candidate_id}': {exc}")
+
     return CandidateOut.from_orm_candidate(candidate)
 
 
