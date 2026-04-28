@@ -22,13 +22,16 @@ Endpoints:
   GET    /api/v1/whatsapp/webhook                   — WhatsApp verification
 """
 import json
+import re
 import uuid
+import zipfile
+from io import BytesIO
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from api.pipeline import process_cv_file, PipelineError
@@ -58,6 +61,7 @@ from api.schemas import (
     ActiveWorkersResponse,
     BatchSummary,
     CandidateCorrectionOut,
+    CandidateCvZipRequest,
     CandidateListItem,
     CandidateListOut,
     CandidateOut,
@@ -710,7 +714,101 @@ def _candidate_list_item(candidate) -> CandidateListItem:
         skills=[skill.skill for skill in candidate.skills],
         skills_count=len(candidate.skills),
         source_filename=candidate.source_filename,
+        has_cv_file=bool(candidate.saved_upload_filename),
         created_at=candidate.created_at,
+    )
+
+
+def _safe_download_name(value: str, fallback: str) -> str:
+    stem = Path(value or fallback).stem
+    suffix = Path(value or fallback).suffix
+    safe_stem = re.sub(r"[^A-Za-z0-9._ -]+", "_", stem).strip(" ._")
+    return f"{safe_stem or fallback}{suffix}"
+
+
+def _unique_zip_member_name(filename: str, used_names: set[str]) -> str:
+    safe_name = _safe_download_name(filename, "cv")
+    if safe_name not in used_names:
+        used_names.add(safe_name)
+        return safe_name
+
+    path = Path(safe_name)
+    stem = path.stem or "cv"
+    suffix = path.suffix
+    counter = 2
+    while True:
+        candidate_name = f"{stem} ({counter}){suffix}"
+        if candidate_name not in used_names:
+            used_names.add(candidate_name)
+            return candidate_name
+        counter += 1
+
+
+def _zip_archive_filename(zip_name: str) -> str:
+    safe_name = _safe_download_name(zip_name, "selected-cvs")
+    if not safe_name.lower().endswith(".zip"):
+        safe_name = f"{Path(safe_name).stem or 'selected-cvs'}.zip"
+    return safe_name
+
+
+@router.post("/candidates/cv-zip", tags=["Candidates"])
+def download_candidate_cv_zip(
+    request: CandidateCvZipRequest,
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user),
+):
+    """Download selected candidates' original CV files as a named zip archive."""
+    upload_dir = settings.UPLOAD_DIR.resolve()
+    selected_ids = list(dict.fromkeys(request.candidate_ids))
+    missing_ids: list[str] = []
+    skipped_ids: list[str] = []
+    used_names: set[str] = set()
+    archive = BytesIO()
+
+    with zipfile.ZipFile(archive, mode="w", compression=zipfile.ZIP_DEFLATED) as zip_file:
+        for candidate_id in selected_ids:
+            candidate = crud.get_candidate(db=db, candidate_id=candidate_id)
+            if not candidate:
+                missing_ids.append(candidate_id)
+                continue
+
+            if not candidate.saved_upload_filename:
+                skipped_ids.append(candidate_id)
+                continue
+
+            cv_path = (upload_dir / Path(candidate.saved_upload_filename).name).resolve()
+            if upload_dir not in cv_path.parents or not cv_path.exists():
+                skipped_ids.append(candidate_id)
+                continue
+
+            filename = candidate.source_filename or cv_path.name
+            member_name = _unique_zip_member_name(filename, used_names)
+            zip_file.write(cv_path, arcname=member_name)
+
+    if not used_names:
+        details = "No selected candidates had stored CV files."
+        if missing_ids:
+            details = f"{details} Missing candidate IDs: {', '.join(missing_ids[:5])}."
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=details)
+
+    archive.seek(0)
+    archive_name = _zip_archive_filename(request.zip_name)
+    crud.log_activity(
+        db=db,
+        worker=current_user,
+        action="download_candidate_cv_zip",
+        target_type="candidate",
+        status="success",
+        details=(
+            f"Downloaded {len(used_names)} CV file(s) as {archive_name}. "
+            f"Skipped {len(skipped_ids)} unavailable file(s)."
+        ),
+    )
+
+    return StreamingResponse(
+        archive,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{archive_name}"'},
     )
 
 

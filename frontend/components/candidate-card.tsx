@@ -3,6 +3,7 @@
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Calendar,
   ChevronRight,
@@ -24,6 +25,7 @@ export interface Candidate {
   confidence?: number | null
   createdAt?: string
   sourceFilename?: string | null
+  hasCvFile?: boolean
   duplicateMatch?: string | null
   onDelete?: ((id: string) => void) | undefined
   deleting?: boolean
@@ -32,9 +34,18 @@ export interface Candidate {
 interface CandidateCardProps {
   candidate: Candidate
   className?: string
+  selectable?: boolean
+  selected?: boolean
+  onSelectedChange?: (id: string, selected: boolean) => void
 }
 
-export function CandidateCard({ candidate, className }: CandidateCardProps) {
+export function CandidateCard({
+  candidate,
+  className,
+  selectable = false,
+  selected = false,
+  onSelectedChange,
+}: CandidateCardProps) {
   const initials = candidate.name
     .split(" ")
     .map((n) => n[0])
@@ -49,6 +60,18 @@ export function CandidateCard({ candidate, className }: CandidateCardProps) {
           className
         )}
       >
+        {selectable && (
+          <div className="flex h-12 items-center">
+            <Checkbox
+              checked={selected}
+              disabled={!candidate.hasCvFile}
+              onCheckedChange={(checked) =>
+                onSelectedChange?.(candidate.id, checked === true)
+              }
+              aria-label={`Select ${candidate.name}`}
+            />
+          </div>
+        )}
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-semibold">
           {initials}
         </div>

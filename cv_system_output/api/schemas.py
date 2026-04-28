@@ -97,6 +97,20 @@ class CandidateUpdateRequest(BaseModel):
         return self
 
 
+class CandidateCvZipRequest(BaseModel):
+    """Request to download selected original CV files as a zip archive."""
+    candidate_ids: list[str] = Field(..., min_length=1, max_length=200)
+    zip_name: str = Field("selected-cvs", min_length=1, max_length=80)
+
+    @model_validator(mode="after")
+    def normalize_zip_name(self) -> "CandidateCvZipRequest":
+        self.candidate_ids = [candidate_id.strip() for candidate_id in self.candidate_ids if candidate_id.strip()]
+        if not self.candidate_ids:
+            raise ValueError("At least one candidate ID is required.")
+        self.zip_name = self.zip_name.strip() or "selected-cvs"
+        return self
+
+
 class CandidateCorrectionOut(BaseModel):
     """Stored admin correction used as learning feedback."""
     id: int
@@ -129,6 +143,7 @@ class CandidateListItem(BaseModel):
     skills: list[str]
     skills_count: int
     source_filename: Optional[str]
+    has_cv_file: bool = False
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

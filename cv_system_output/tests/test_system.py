@@ -6,9 +6,13 @@ Run with: pytest tests/ -v
 import io
 import sys
 import uuid
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
+
+from docx import Document
+from docx.oxml import parse_xml
 
 # Ensure project root is on path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -23,7 +27,7 @@ from main import app
 from analytics import build_candidate_analytics, summarize_batch
 from database.session import Base, get_db
 from parser.parser import infer_name_from_filename, parse_cv, should_prefer_filename_name
-from parser.extractor import sanitize_text
+from parser.extractor import extract_text, sanitize_text
 from classifier.classifier import classify_cv
 from api.pipeline import process_cv_file
 from auth import get_current_user, require_admin_user
@@ -368,6 +372,39 @@ class TestParser:
         parsed = parse_cv(sanitize_text(IT_CV_TEXT))
         assert parsed.education is not None
 
+    def test_docx_extraction_reads_text_boxes(self):
+        doc = Document()
+        paragraph = doc.add_paragraph()
+        paragraph._p.append(
+            parse_xml(
+                """
+                <w:r xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+                     xmlns:v="urn:schemas-microsoft-com:vml">
+                  <w:pict>
+                    <v:shape>
+                      <v:textbox>
+                        <w:txbxContent>
+                          <w:p>
+                            <w:r><w:t>Faustina Okyere</w:t></w:r>
+                          </w:p>
+                        </w:txbxContent>
+                      </v:textbox>
+                    </v:shape>
+                  </w:pict>
+                </w:r>
+                """
+            )
+        )
+
+        temp_dir = Path(__file__).parent / "_tmp_docx"
+        temp_dir.mkdir(exist_ok=True)
+        path = temp_dir / f"{uuid.uuid4().hex}.docx"
+        try:
+            doc.save(path)
+            assert "Faustina Okyere" in extract_text(path)
+        finally:
+            path.unlink(missing_ok=True)
+
 
 class TestAnalytics:
     def test_build_candidate_analytics_normalizes_fields(self):
@@ -561,6 +598,52 @@ class TestAPI:
         data = resp.json()
         assert data["total_files"] == 21
         assert "batch_summary" in data
+
+    def test_download_selected_candidate_cvs_as_zip(self, client, monkeypatch):
+        from api import routes as routes_module
+        from database import crud
+
+        upload_dir = Path(__file__).parent / "_tmp_zip_uploads" / uuid.uuid4().hex
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(routes_module.settings, "UPLOAD_DIR", upload_dir)
+
+        saved_filename = "stored-cv.pdf"
+        (upload_dir / saved_filename).write_bytes(b"%PDF-1.4 test cv")
+
+        db = TestSessionLocal()
+        try:
+            candidate = crud.create_candidate(
+                db=db,
+                name="Zip Candidate",
+                email="zip@example.com",
+                phone=None,
+                skills=["Python"],
+                experience=None,
+                education=None,
+                cv_text="Zip Candidate Python",
+                category="Information Technology (IT)",
+                subcategory="Software Development",
+                confidence=0.9,
+                years_experience=3,
+                seniority_level="Mid",
+                source_filename="Zip Candidate CV.pdf",
+                saved_upload_filename=saved_filename,
+            )
+        finally:
+            db.close()
+
+        resp = client.post(
+            "/api/v1/candidates/cv-zip",
+            json={"candidate_ids": [candidate.id], "zip_name": "shortlist"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "application/zip"
+        assert 'filename="shortlist.zip"' in resp.headers["content-disposition"]
+
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as archive:
+            assert archive.namelist() == ["Zip Candidate CV.pdf"]
+            assert archive.read("Zip Candidate CV.pdf") == b"%PDF-1.4 test cv"
 
 
 class TestPipeline:

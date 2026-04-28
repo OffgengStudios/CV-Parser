@@ -5,6 +5,8 @@ Responsibility: Accept a file path, return raw text string.
 All parsing logic (fields, regex) lives in parser.py — not here.
 """
 import re
+import zipfile
+from xml.etree import ElementTree
 from pathlib import Path
 from typing import Optional
 
@@ -79,7 +81,7 @@ def _extract_pdf(file_path: Path) -> str:
 
 
 def _extract_docx(file_path: Path) -> str:
-    """Extract text from all paragraphs and tables in a DOCX file."""
+    """Extract text from paragraphs, tables, and DOCX XML text containers."""
     log.info(f"Extracting DOCX: {file_path.name}")
     parts: list[str] = []
 
@@ -100,6 +102,11 @@ def _extract_docx(file_path: Path) -> str:
                 if row_text:
                     parts.append(row_text)
 
+        # Some CV templates store visible text in Word text boxes/shapes.
+        # python-docx does not expose that text through doc.paragraphs/tables.
+        if not parts:
+            parts.extend(_extract_docx_xml_text(file_path))
+
     except (OSError, IOError) as exc:
         log.error(f"Failed to read DOCX {file_path.name} (file I/O): {exc}")
         raise ExtractionError(f"Could not read DOCX: {exc}") from exc
@@ -113,6 +120,38 @@ def _extract_docx(file_path: Path) -> str:
 
     log.info(f"DOCX extracted: {len(raw)} characters.")
     return raw
+
+
+def _extract_docx_xml_text(file_path: Path) -> list[str]:
+    """Fallback extractor for text held in headers, footers, and text boxes."""
+    texts: list[str] = []
+
+    try:
+        with zipfile.ZipFile(file_path) as archive:
+            xml_names = [
+                name
+                for name in archive.namelist()
+                if name.startswith("word/")
+                and name.endswith(".xml")
+                and (
+                    name == "word/document.xml"
+                    or name.startswith("word/header")
+                    or name.startswith("word/footer")
+                    or name.startswith("word/footnotes")
+                    or name.startswith("word/endnotes")
+                )
+            ]
+
+            for name in xml_names:
+                root = ElementTree.fromstring(archive.read(name))
+                for node in root.iter("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t"):
+                    text = (node.text or "").strip()
+                    if text:
+                        texts.append(text)
+    except (zipfile.BadZipFile, ElementTree.ParseError) as exc:
+        log.debug(f"DOCX XML fallback could not read {file_path.name}: {exc}")
+
+    return texts
 
 
 def sanitize_text(text: str) -> str:

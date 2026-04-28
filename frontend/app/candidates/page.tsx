@@ -2,13 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { AlertTriangle, Search, Trash2, Users, X } from "lucide-react"
+import { AlertTriangle, Download, Search, Trash2, Users, X } from "lucide-react"
 
 import { AppSidebar } from "@/components/app-sidebar"
 import { CandidateCard, type Candidate } from "@/components/candidate-card"
 import { DeleteCandidateDialog } from "@/components/delete-candidate-dialog"
 import { EmptyState } from "@/components/empty-state"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
 import {
   Select,
@@ -19,6 +20,7 @@ import {
 } from "@/components/ui/select"
 import {
   deleteCandidate,
+  downloadCandidateCvZip,
   fetchAllCandidates,
   fetchDuplicateCandidates,
   getApiErrorMessage,
@@ -62,6 +64,11 @@ export default function CandidatesPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<Candidate | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<Set<string>>(
+    () => new Set()
+  )
+  const [zipName, setZipName] = useState("selected-cvs")
+  const [downloadingZip, setDownloadingZip] = useState(false)
 
   // Get refresh param from URL on mount
   useEffect(() => {
@@ -112,6 +119,7 @@ export default function CandidatesPage() {
           confidence: candidate.confidence,
           createdAt: candidate.created_at,
           sourceFilename: candidate.source_filename,
+          hasCvFile: candidate.has_cv_file,
           duplicateMatch: duplicateById.get(candidate.id) || null,
         }))
       )
@@ -145,6 +153,7 @@ export default function CandidatesPage() {
       confidence: candidate.confidence,
       createdAt: candidate.created_at,
       sourceFilename: candidate.source_filename,
+      hasCvFile: candidate.has_cv_file,
     })
   }
 
@@ -216,6 +225,18 @@ export default function CandidatesPage() {
     return result
   }, [candidates, searchQuery, sortBy])
 
+  useEffect(() => {
+    const availableIds = new Set(
+      candidates
+        .filter((candidate) => candidate.hasCvFile)
+        .map((candidate) => candidate.id)
+    )
+    setSelectedCandidateIds((prev) => {
+      const next = new Set([...prev].filter((id) => availableIds.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [candidates])
+
   const clearFilters = () => {
     setSearchQuery("")
     setSelectedCategory("")
@@ -231,6 +252,69 @@ export default function CandidatesPage() {
     })
     return ids
   }, [duplicateGroups])
+  const visibleDownloadableCandidates = useMemo(
+    () => filteredCandidates.filter((candidate) => candidate.hasCvFile),
+    [filteredCandidates]
+  )
+  const selectedCount = selectedCandidateIds.size
+  const allVisibleSelected =
+    visibleDownloadableCandidates.length > 0 &&
+    visibleDownloadableCandidates.every((candidate) =>
+      selectedCandidateIds.has(candidate.id)
+    )
+
+  function handleCandidateSelection(id: string, selected: boolean) {
+    setSelectedCandidateIds((prev) => {
+      const next = new Set(prev)
+      if (selected) {
+        next.add(id)
+      } else {
+        next.delete(id)
+      }
+      return next
+    })
+  }
+
+  function toggleVisibleSelection() {
+    setSelectedCandidateIds((prev) => {
+      const next = new Set(prev)
+      if (allVisibleSelected) {
+        visibleDownloadableCandidates.forEach((candidate) => next.delete(candidate.id))
+      } else {
+        visibleDownloadableCandidates.forEach((candidate) => next.add(candidate.id))
+      }
+      return next
+    })
+  }
+
+  async function downloadSelectedCvs() {
+    if (selectedCount === 0) return
+    setDownloadingZip(true)
+    try {
+      const blob = await downloadCandidateCvZip([...selectedCandidateIds], zipName)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      const safeName = zipName.trim().replace(/\.zip$/i, "") || "selected-cvs"
+      link.download = `${safeName}.zip`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      toast({
+        title: "CV zip downloaded",
+        description: `${selectedCount} selected CV file${selectedCount === 1 ? "" : "s"} downloaded.`,
+      })
+    } catch (error) {
+      toast({
+        title: "Download failed",
+        description: getApiErrorMessage(error),
+        variant: "destructive",
+      })
+    } finally {
+      setDownloadingZip(false)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -380,6 +464,39 @@ export default function CandidatesPage() {
             {filteredCandidates.length === 1 ? "" : "s"}
           </div>
 
+          <div className="mb-4 flex flex-col gap-3 rounded-lg border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={toggleVisibleSelection}
+                disabled={visibleDownloadableCandidates.length === 0}
+              >
+                {allVisibleSelected ? "Clear visible" : "Select visible"}
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                {selectedCount} selected
+              </span>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Input
+                value={zipName}
+                onChange={(event) => setZipName(event.target.value)}
+                placeholder="Zip file name"
+                className="sm:w-56"
+                aria-label="Zip file name"
+              />
+              <Button
+                onClick={downloadSelectedCvs}
+                disabled={selectedCount === 0 || downloadingZip}
+                className="gap-2"
+              >
+                <Download className="h-4 w-4" />
+                {downloadingZip ? "Preparing..." : "Download zip"}
+              </Button>
+            </div>
+          </div>
+
           {loading ? (
             <div className="text-sm text-muted-foreground">Loading candidates...</div>
           ) : filteredCandidates.length === 0 ? (
@@ -402,6 +519,9 @@ export default function CandidatesPage() {
                     onDelete: handleDeleteCandidate,
                     deleting: deletingId === candidate.id,
                   }}
+                  selectable
+                  selected={selectedCandidateIds.has(candidate.id)}
+                  onSelectedChange={handleCandidateSelection}
                 />
               ))}
             </div>

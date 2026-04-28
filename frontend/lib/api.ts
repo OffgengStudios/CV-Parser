@@ -11,6 +11,7 @@ export interface ApiCandidateListItem {
   skills: string[]
   skills_count: number
   source_filename: string | null
+  has_cv_file: boolean
   created_at: string
 }
 
@@ -496,6 +497,31 @@ export async function fetchCandidateCvBlob(id: string, download = false) {
   if (!response.ok) {
     throw new ApiRequestError(
       `/api/v1/candidates/${id}/cv`,
+      response.status,
+      await readErrorDetail(response)
+    )
+  }
+
+  return response.blob()
+}
+
+export async function downloadCandidateCvZip(candidateIds: string[], zipName: string) {
+  const response = await fetch(getApiUrl("/api/v1/candidates/cv-zip"), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${await getAccessToken()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      candidate_ids: candidateIds,
+      zip_name: zipName,
+    }),
+    cache: "no-store",
+  })
+
+  if (!response.ok) {
+    throw new ApiRequestError(
+      "/api/v1/candidates/cv-zip",
       response.status,
       await readErrorDetail(response)
     )
