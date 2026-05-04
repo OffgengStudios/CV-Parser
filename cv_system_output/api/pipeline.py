@@ -7,6 +7,7 @@ Keeps the API route thin and the logic testable.
 """
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 from sqlalchemy.orm import Session
 
@@ -14,8 +15,12 @@ from config import settings
 from logger import get_logger
 from parser.extractor import extract_text, sanitize_text, ExtractionError
 from parser.parser import infer_name_from_filename, parse_cv, should_prefer_filename_name
-from analytics import build_candidate_analytics
-from classifier.classifier import classify_cv
+from analytics import CandidateAnalytics, build_candidate_analytics, normalize_skills
+from classifier.classifier import (
+    DEFAULT_MAIN_CATEGORY,
+    DEFAULT_SUBCATEGORY,
+    classify_cv,
+)
 from database import crud
 from database.models import Candidate
 from google_sheets import append_candidate
@@ -85,17 +90,50 @@ def process_cv_file(
         if should_prefer_filename_name(parsed.name, original_filename):
             parsed.name = infer_name_from_filename(original_filename)
 
-        # Classify
-        classification = classify_cv(clean_text, skills=parsed.skills)
-        analytics = build_candidate_analytics(
-            name=parsed.name,
-            email=parsed.email,
-            phone=parsed.phone,
-            skills=parsed.skills,
-            experience_text=parsed.experience or clean_text,
-            category=classification.category,
-            subcategory=classification.subcategory,
-        )
+        # Classify. Formatting-related classifier/analytics failures should
+        # not make an otherwise readable CV upload fail.
+        try:
+            classification = classify_cv(clean_text, skills=parsed.skills)
+        except Exception as exc:
+            log.warning(
+                "Classification failed for '%s'; using default category: %s",
+                original_filename,
+                exc,
+                exc_info=True,
+            )
+            classification = SimpleNamespace(
+                category=DEFAULT_MAIN_CATEGORY,
+                subcategory=DEFAULT_SUBCATEGORY,
+                confidence=0.0,
+            )
+
+        try:
+            analytics = build_candidate_analytics(
+                name=parsed.name,
+                email=parsed.email,
+                phone=parsed.phone,
+                skills=parsed.skills,
+                experience_text=parsed.experience or clean_text,
+                category=classification.category,
+                subcategory=classification.subcategory,
+            )
+        except Exception as exc:
+            log.warning(
+                "Candidate analytics failed for '%s'; persisting partial parse: %s",
+                original_filename,
+                exc,
+                exc_info=True,
+            )
+            analytics = CandidateAnalytics(
+                name=parsed.name,
+                email=parsed.email,
+                phone=parsed.phone,
+                skills=normalize_skills(parsed.skills),
+                years_experience=None,
+                seniority_level="Mid",
+                category=classification.category,
+                subcategory=classification.subcategory,
+            )
 
         # Persist
         candidate = crud.create_candidate(

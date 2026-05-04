@@ -26,38 +26,100 @@ _SKILL_PATTERNS = [
     for kw in SKILLS_KEYWORDS
 ]
 
-# Section headers to detect CV sections
-_SECTION_PATTERNS = {
-    "experience": re.compile(
-        r"^(work\s+)?experience|employment(\s+history)?|professional\s+(background|history)|career\s+(history|summary)",
-        re.IGNORECASE | re.MULTILINE,
+# Section headers to detect CV sections. Keep aliases broad but header matching
+# line-oriented so inline facts like "Experience: 1 year | Available..." do
+# not become fake section breaks.
+_SECTION_ALIASES = {
+    "experience": (
+        "experience",
+        "work experience",
+        "employment",
+        "employment history",
+        "professional experience",
+        "professional background",
+        "professional history",
+        "career history",
+        "career summary",
+        "internship experience",
+        "work history",
     ),
-    "education": re.compile(
-        r"^education(al\s+background)?|academic\s+(background|history)|qualifications?|degrees?",
-        re.IGNORECASE | re.MULTILINE,
+    "education": (
+        "education",
+        "educational background",
+        "academic background",
+        "academic history",
+        "qualifications",
+        "qualification",
+        "degrees",
+        "degree",
     ),
-    "skills": re.compile(
-        r"^(technical\s+|core\s+|key\s+)?skills?(\s+&?\s+competenc(ies|e))?|competenc(ies|e)|expertise",
-        re.IGNORECASE | re.MULTILINE,
+    "skills": (
+        "skills",
+        "skill",
+        "job skills",
+        "technical skills",
+        "core skills",
+        "key skills",
+        "skills and competencies",
+        "skills & competencies",
+        "competencies",
+        "competence",
+        "expertise",
+    ),
+    "profile": (
+        "profile",
+        "summary",
+        "professional summary",
+        "about me",
+        "objective",
+    ),
+    "other": (
+        "language skills",
+        "languages",
+        "certificates",
+        "certificates and awards",
+        "certifications",
+        "awards",
+        "references",
     ),
 }
 
+_SECTION_PATTERNS = {
+    section: re.compile(
+        r"^(?:"
+        + "|".join(re.escape(alias).replace(r"\ ", r"\s+") for alias in aliases)
+        + r")\s*:?\s*$",
+        re.IGNORECASE,
+    )
+    for section, aliases in _SECTION_ALIASES.items()
+}
+
 def _normalize_whitespace(text: str) -> str:
-    return re.sub(r"\r\n|\r", "\n", text).strip()
+    text = re.sub(r"\r\n|\r", "\n", text or "")
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
+    text = re.sub(r"-\n(?=[a-z])", "", text)
+    text = re.sub(r"[^\S\n]+", " ", text)
+    text = re.sub(r"[ \t]*([|•])+[ \t]*", r" \1 ", text)
+    text = re.sub(r"[ \t]+$", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 def _normalize_section_name(line: str) -> Optional[str]:
-    trimmed = line.strip()
+    trimmed = line.strip().strip("-_")
     if not trimmed:
         return None
 
-    if len(trimmed.split()) > 8:
+    if "|" in trimmed:
         return None
-    if re.search(r"[.:;]", trimmed):
+    if len(trimmed.split()) > 6:
         return None
+    if re.search(r"[.;]", trimmed):
+        return None
+    trimmed = trimmed.rstrip(":").strip()
 
     for section, pattern in _SECTION_PATTERNS.items():
-        if pattern.search(trimmed):
+        if pattern.fullmatch(trimmed):
             return section
     return None
 
@@ -76,7 +138,7 @@ def _group_lines_into_sections(text: str) -> dict[str, list[str]]:
         section_name = _normalize_section_name(line)
         if section_name:
             if current_lines:
-                sections[current_section] = current_lines
+                sections.setdefault(current_section, []).extend(current_lines)
             current_section = section_name
             current_lines = []
             continue
@@ -84,7 +146,7 @@ def _group_lines_into_sections(text: str) -> dict[str, list[str]]:
         current_lines.append(line)
 
     if current_lines:
-        sections[current_section] = current_lines
+        sections.setdefault(current_section, []).extend(current_lines)
 
     return sections
 
@@ -145,31 +207,55 @@ def parse_cv(text: str) -> ParsedCV:
     Never raises — missing fields are None or [].
     """
     normalized_text = _normalize_whitespace(text)
-    sections = _group_lines_into_sections(normalized_text)
-    profile_text = _join_section_lines(sections.get("profile", [])) or normalized_text
-
     log.info("Starting CV field extraction.")
-    result = ParsedCV(raw_text=normalized_text)
 
-    result.email = _extract_email(profile_text) or _extract_email(normalized_text)
-    result.phone = _extract_phone(profile_text) or _extract_phone(normalized_text)
-    result.name = _extract_name(profile_text) or _extract_name(normalized_text)
-    result.skills = (
-        _extract_skills(_join_section_lines(sections.get("skills", [])))
-        or _extract_skills(normalized_text)
-    )
-    result.experience = _extract_section_from_groups(
-        sections, "experience", normalized_text
-    )
-    result.education = _extract_section_from_groups(
-        sections, "education", normalized_text
-    )
+    try:
+        sections = _group_lines_into_sections(normalized_text)
+        profile_text = _join_section_lines(sections.get("profile", [])) or normalized_text
+
+        result = ParsedCV(raw_text=normalized_text)
+        result.email = _extract_email(profile_text) or _extract_email(normalized_text)
+        result.phone = _extract_phone(profile_text) or _extract_phone(normalized_text)
+        result.name = _extract_name(profile_text) or _extract_name(normalized_text)
+        result.skills = (
+            _extract_skills(_join_section_lines(sections.get("skills", [])))
+            or _extract_skills(normalized_text)
+        )
+        result.experience = _extract_section_from_groups(
+            sections, "experience", normalized_text
+        )
+        result.education = _extract_section_from_groups(
+            sections, "education", normalized_text
+        )
+    except Exception as exc:
+        log.warning("Structured CV parsing failed; using fallback parser: %s", exc, exc_info=True)
+        result = _fallback_parse_cv(normalized_text)
+
+    if not any([result.name, result.email, result.phone, result.skills]):
+        log.info("Structured fields were sparse; applying fallback extraction.")
+        fallback = _fallback_parse_cv(normalized_text)
+        result.name = result.name or fallback.name
+        result.email = result.email or fallback.email
+        result.phone = result.phone or fallback.phone
+        result.skills = result.skills or fallback.skills
 
     log.info(
         f"Parsed: name={result.name!r}, email={result.email!r}, "
         f"phone={result.phone!r}, skills={len(result.skills)}"
     )
     return result
+
+
+def _fallback_parse_cv(text: str) -> ParsedCV:
+    """Best-effort extraction that never depends on section structure."""
+    normalized_text = _normalize_whitespace(text)
+    return ParsedCV(
+        name=_extract_name(normalized_text),
+        email=_extract_email(normalized_text),
+        phone=_extract_phone(normalized_text),
+        skills=_extract_skills(normalized_text),
+        raw_text=normalized_text,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -442,32 +528,14 @@ def _extract_section(text: str, section_name: str) -> Optional[str]:
     Extract text under a named CV section by detecting section headers.
     Returns up to 2000 characters of content, or None if section not found.
     """
-    header_pattern = _SECTION_PATTERNS.get(section_name)
-    if not header_pattern:
-        return None
-
-    # Find all section header positions
-    all_headers = sorted(
-        [m.start() for pattern in _SECTION_PATTERNS.values() for m in pattern.finditer(text)]
-    )
-
-    match = header_pattern.search(text)
-    if not match:
+    sections = _group_lines_into_sections(text)
+    section_lines = sections.get(section_name)
+    if not section_lines:
         log.debug(f"Section '{section_name}' not found in CV.")
         return None
 
-    start = match.end()
-
-    # Find where this section ends (start of the next section)
-    end = len(text)
-    for pos in all_headers:
-        if pos > match.start():
-            end = pos
-            break
-
-    content = text[start:end].strip()
+    content = _join_section_lines(section_lines)
     if not content:
         return None
 
-    # Truncate to a reasonable storage length
     return content[:2000] if len(content) > 2000 else content

@@ -243,6 +243,29 @@ Market Research & Data Collection
 Microsoft Excel & MS Office Suite
 """
 
+JEDIDIALLA_STYLE_CV_TEXT = """
+JEDIDIALLA SARFO ADJEPONG
+Customer service representative
+Experience: 1 year | Available: Immediately | Location: Accra & Tema Region
+jedidialla2@gmail.com |
++233262734398
+ABOUT ME
+I have good communication skills.
+WORK EXPERIENCE
+Mad. Irene
+Internship & Graduate | Call Representative
+2025-11-01 | Currently working here
+No Experience |
+EDUCATION
+University of Education, Winneba
+High School (S.S.C.E) | WASSCE certi\x00cate
+JOB SKILLS
+Digital marketing and writing
+LANGUAGE SKILLS
+Akan English
+CERTIFICATES & AWARDS
+"""
+
 
 # ---------------------------------------------------------------------------
 # Parser unit tests
@@ -371,6 +394,31 @@ class TestParser:
     def test_education_section_extracted(self):
         parsed = parse_cv(sanitize_text(IT_CV_TEXT))
         assert parsed.education is not None
+
+    def test_parse_sales_rep_pdf_shape_with_irregular_sections(self):
+        parsed = parse_cv(sanitize_text(JEDIDIALLA_STYLE_CV_TEXT))
+        assert parsed.name == "Jedidialla Sarfo Adjepong"
+        assert parsed.email == "jedidialla2@gmail.com"
+        assert parsed.phone == "+233 26 273 4398"
+        assert "communication" in [skill.lower() for skill in parsed.skills]
+        assert parsed.experience is not None
+        assert "No Experience" in parsed.experience
+        assert parsed.education is not None
+        assert "LANGUAGE SKILLS" not in parsed.education
+
+    def test_parser_returns_partial_result_for_messy_unsectioned_cv(self):
+        parsed = parse_cv(
+            sanitize_text(
+                """
+                No Experience | Name: Akua Mensah | Email akua@example.com
+                Mobile: +233 24 111 2222
+                Python / Excel / Customer service
+                """
+            )
+        )
+        assert parsed.email == "akua@example.com"
+        assert parsed.phone == "+233 24 111 2222"
+        assert "excel" in [skill.lower() for skill in parsed.skills]
 
     def test_docx_extraction_reads_text_boxes(self):
         doc = Document()
@@ -673,6 +721,38 @@ class TestPipeline:
             refreshed = db.get(type(candidate), candidate.id)
             assert refreshed is not None
             assert refreshed.saved_upload_filename == candidate.saved_upload_filename
+        finally:
+            db.close()
+
+    def test_process_cv_file_persists_partial_result_when_classification_fails(self, monkeypatch):
+        from api import pipeline as pipeline_module
+
+        upload_dir = Path(__file__).parent / "_tmp_uploads" / uuid.uuid4().hex
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(pipeline_module.settings, "UPLOAD_DIR", upload_dir)
+        monkeypatch.setattr(
+            pipeline_module,
+            "extract_text",
+            lambda path: JEDIDIALLA_STYLE_CV_TEXT,
+        )
+        monkeypatch.setattr(
+            pipeline_module,
+            "classify_cv",
+            lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("bad format")),
+        )
+        monkeypatch.setattr(pipeline_module, "append_candidate", lambda candidate: None)
+
+        db = TestSessionLocal()
+        try:
+            candidate = process_cv_file(
+                file_content=b"%PDF-1.4 test content",
+                original_filename="JedidiallaSarfoAdjepong.pdf",
+                db=db,
+            )
+            assert candidate.name == "Jedidialla Sarfo Adjepong"
+            assert candidate.email == "jedidialla2@gmail.com"
+            assert candidate.category == "Administration & Operations"
+            assert candidate.confidence == 0.0
         finally:
             db.close()
 

@@ -159,8 +159,13 @@ def sanitize_text(text: str) -> str:
     Normalize whitespace and remove non-printable characters.
     Called after extraction, before field parsing.
     """
-    # Replace multiple whitespace/newlines with single newline
+    # PDF extractors can emit NUL/control bytes inside otherwise valid text.
+    # Remove them before parser/database layers see the content.
     text = re.sub(r"\r\n|\r", "\n", text)
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
+    text = re.sub(r"-\n(?=[a-z])", "", text)
     text = re.sub(r"[^\S\n]+", " ", text)  # Collapse spaces, preserve newlines
+    text = re.sub(r"[ \t]*([|•])+[ \t]*", r" \1 ", text)
+    text = re.sub(r"[ \t]+$", "", text, flags=re.MULTILINE)
     text = re.sub(r"\n{3,}", "\n\n", text)  # Max 2 blank lines
     return text.strip()
