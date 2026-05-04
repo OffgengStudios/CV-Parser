@@ -70,6 +70,13 @@ export interface ApiDuplicateCandidateGroupsResponse {
   groups: ApiDuplicateCandidateGroup[]
 }
 
+export interface ApiDeleteDuplicateCandidatesResponse {
+  deleted_count: number
+  deleted_candidate_ids: string[]
+  kept_candidate_ids: string[]
+  reviewed_groups: number
+}
+
 export interface ApiUploadLog {
   id: number
   filename: string
@@ -534,6 +541,14 @@ export async function fetchDuplicateCandidates() {
   return apiFetch<ApiDuplicateCandidateGroupsResponse>(
     "/api/v1/candidates/duplicates",
     undefined,
+    { auth: true }
+  )
+}
+
+export async function deleteDuplicateCandidates() {
+  return apiFetch<ApiDeleteDuplicateCandidatesResponse>(
+    "/api/v1/candidates/duplicates",
+    { method: "DELETE" },
     { auth: true }
   )
 }

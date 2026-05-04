@@ -390,6 +390,94 @@ def find_duplicate_candidate_groups(db: Session) -> list[dict]:
     return duplicate_groups
 
 
+def delete_duplicate_candidates_after_review(db: Session) -> dict[str, object]:
+    """
+    Delete duplicate candidate records while preserving one record per connected
+    duplicate cluster. The newest candidate in each cluster is kept.
+    """
+    duplicate_groups = find_duplicate_candidate_groups(db)
+    if not duplicate_groups:
+        return {
+            "deleted_count": 0,
+            "deleted_candidate_ids": [],
+            "kept_candidate_ids": [],
+            "reviewed_groups": 0,
+        }
+
+    adjacency: dict[str, set[str]] = defaultdict(set)
+    candidates_by_id: dict[str, Candidate] = {}
+    for group in duplicate_groups:
+        group_candidates = list(group["candidates"])
+        group_ids = [candidate.id for candidate in group_candidates]
+        for candidate in group_candidates:
+            candidates_by_id[candidate.id] = candidate
+            adjacency.setdefault(candidate.id, set())
+        for candidate_id in group_ids:
+            adjacency[candidate_id].update(other_id for other_id in group_ids if other_id != candidate_id)
+
+    visited: set[str] = set()
+    kept_candidate_ids: list[str] = []
+    delete_candidate_ids: list[str] = []
+
+    for candidate_id in adjacency:
+        if candidate_id in visited:
+            continue
+
+        stack = [candidate_id]
+        component_ids: set[str] = set()
+        while stack:
+            current_id = stack.pop()
+            if current_id in visited:
+                continue
+            visited.add(current_id)
+            component_ids.add(current_id)
+            stack.extend(adjacency[current_id] - visited)
+
+        component_candidates = [
+            candidates_by_id[current_id]
+            for current_id in component_ids
+            if current_id in candidates_by_id
+        ]
+        if len(component_candidates) < 2:
+            continue
+
+        keep = max(component_candidates, key=lambda candidate: candidate.created_at)
+        kept_candidate_ids.append(keep.id)
+        delete_candidate_ids.extend(
+            candidate.id for candidate in component_candidates if candidate.id != keep.id
+        )
+
+    if not delete_candidate_ids:
+        return {
+            "deleted_count": 0,
+            "deleted_candidate_ids": [],
+            "kept_candidate_ids": kept_candidate_ids,
+            "reviewed_groups": len(duplicate_groups),
+        }
+
+    candidates_to_delete = list(
+        db.execute(
+            select(Candidate).where(Candidate.id.in_(delete_candidate_ids))
+        ).scalars().all()
+    )
+    for candidate in candidates_to_delete:
+        db.delete(candidate)
+
+    db.commit()
+    log.info(
+        "Duplicate candidates deleted after review: deleted=%s kept=%s groups=%s",
+        len(candidates_to_delete),
+        len(kept_candidate_ids),
+        len(duplicate_groups),
+    )
+    return {
+        "deleted_count": len(candidates_to_delete),
+        "deleted_candidate_ids": sorted(candidate.id for candidate in candidates_to_delete),
+        "kept_candidate_ids": sorted(kept_candidate_ids),
+        "reviewed_groups": len(duplicate_groups),
+    }
+
+
 def select_one_candidate_stmt():
     """Returns a lightweight statement used by the health check to verify DB connectivity."""
     return select(Candidate).limit(1)

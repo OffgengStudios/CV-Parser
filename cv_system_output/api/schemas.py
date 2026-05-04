@@ -169,6 +169,13 @@ class DuplicateCandidateGroupsOut(BaseModel):
     groups: list[DuplicateCandidateGroup]
 
 
+class DeleteDuplicateCandidatesOut(BaseModel):
+    deleted_count: int
+    deleted_candidate_ids: list[str]
+    kept_candidate_ids: list[str]
+    reviewed_groups: int
+
+
 # ---------------------------------------------------------------------------
 # Upload response schemas
 # ---------------------------------------------------------------------------

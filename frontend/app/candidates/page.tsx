@@ -8,6 +8,16 @@ import { AppSidebar } from "@/components/app-sidebar"
 import { CandidateCard, type Candidate } from "@/components/candidate-card"
 import { DeleteCandidateDialog } from "@/components/delete-candidate-dialog"
 import { EmptyState } from "@/components/empty-state"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
@@ -20,6 +30,7 @@ import {
 } from "@/components/ui/select"
 import {
   deleteCandidate,
+  deleteDuplicateCandidates,
   downloadCandidateCvZip,
   fetchAllCandidates,
   fetchDuplicateCandidates,
@@ -69,6 +80,8 @@ export default function CandidatesPage() {
   )
   const [zipName, setZipName] = useState("selected-cvs")
   const [downloadingZip, setDownloadingZip] = useState(false)
+  const [confirmDuplicateDeleteOpen, setConfirmDuplicateDeleteOpen] = useState(false)
+  const [deletingDuplicates, setDeletingDuplicates] = useState(false)
 
   // Get refresh param from URL on mount
   useEffect(() => {
@@ -189,6 +202,35 @@ export default function CandidatesPage() {
       })
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  async function confirmDeleteReviewedDuplicates() {
+    setDeletingDuplicates(true)
+    try {
+      const result = await deleteDuplicateCandidates()
+      const deletedIds = new Set(result.deleted_candidate_ids)
+      setCandidates((prev) => prev.filter((candidate) => !deletedIds.has(candidate.id)))
+      setDuplicateGroups([])
+      setSelectedCandidateIds((prev) => {
+        const next = new Set(prev)
+        deletedIds.forEach((id) => next.delete(id))
+        return next
+      })
+      setConfirmDuplicateDeleteOpen(false)
+      setReloadKey((key) => key + 1)
+      toast({
+        title: "Duplicates deleted",
+        description: `${result.deleted_count} duplicate candidate${result.deleted_count === 1 ? "" : "s"} removed. Newest records were kept.`,
+      })
+    } catch (error) {
+      toast({
+        title: "Duplicate delete failed",
+        description: getApiErrorMessage(error),
+        variant: "destructive",
+      })
+    } finally {
+      setDeletingDuplicates(false)
     }
   }
 
@@ -325,6 +367,29 @@ export default function CandidatesPage() {
         onConfirm={confirmDeleteCandidate}
         onCancel={() => setPendingDelete(null)}
       />
+      <AlertDialog
+        open={confirmDuplicateDeleteOpen}
+        onOpenChange={setConfirmDuplicateDeleteOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete reviewed duplicates?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will keep the newest candidate in each duplicate group and permanently remove the older duplicate records.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingDuplicates}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteReviewedDuplicates}
+              disabled={deletingDuplicates}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              {deletingDuplicates ? "Deleting..." : "Delete duplicates"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <main className="pt-16 lg:pl-64 lg:pt-0">
         <div className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
           <div className="mb-8">
@@ -354,6 +419,16 @@ export default function CandidatesPage() {
                     </p>
                   </div>
                 </div>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setConfirmDuplicateDeleteOpen(true)}
+                  disabled={deletingDuplicates}
+                  className="gap-2"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete reviewed duplicates
+                </Button>
               </div>
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                 {duplicateGroups.slice(0, 4).map((group) => (

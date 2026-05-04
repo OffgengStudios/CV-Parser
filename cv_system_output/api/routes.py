@@ -67,6 +67,7 @@ from api.schemas import (
     CandidateOut,
     CandidateTaxonomyOut,
     CandidateUpdateRequest,
+    DeleteDuplicateCandidatesOut,
     DuplicateCandidateGroupsOut,
     DuplicateCandidateGroup,
     GoogleSheetsSyncResponse,
@@ -844,6 +845,41 @@ def list_duplicate_candidates(
         total_candidates=len(duplicate_candidate_ids),
         groups=groups,
     )
+
+
+@router.delete(
+    "/candidates/duplicates",
+    response_model=DeleteDuplicateCandidatesOut,
+    tags=["Candidates"],
+)
+def delete_duplicate_candidates(
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user),
+):
+    """
+    Delete duplicate candidates after review, preserving the newest record in
+    each duplicate cluster.
+    """
+    result = crud.delete_duplicate_candidates_after_review(db)
+    crud.log_activity(
+        db=db,
+        worker=current_user,
+        action="delete_duplicate_candidates",
+        target_type="candidate",
+        status="success",
+        details=(
+            f"Deleted {result['deleted_count']} duplicate candidate(s) "
+            f"after reviewing {result['reviewed_groups']} group(s)."
+        ),
+    )
+    try:
+        replace_main_sheet(crud.list_all_candidates(db))
+    except (OSError, IOError, ValueError) as exc:
+        log.warning(f"Google Sheets main sheet refresh after duplicate delete (I/O error): {exc}")
+    except Exception as exc:
+        log.warning(f"Google Sheets main sheet refresh failed after deleting duplicates: {exc}")
+
+    return DeleteDuplicateCandidatesOut(**result)
 
 
 @router.get("/candidates/{candidate_id}", response_model=CandidateOut, tags=["Candidates"])

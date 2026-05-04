@@ -7,7 +7,7 @@ import io
 import sys
 import uuid
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -692,6 +692,88 @@ class TestAPI:
         with zipfile.ZipFile(io.BytesIO(resp.content)) as archive:
             assert archive.namelist() == ["Zip Candidate CV.pdf"]
             assert archive.read("Zip Candidate CV.pdf") == b"%PDF-1.4 test cv"
+
+    def test_delete_duplicate_candidates_keeps_newest_connected_record(self, client, monkeypatch):
+        from api import routes as routes_module
+        from database import crud
+
+        monkeypatch.setattr(routes_module, "replace_main_sheet", lambda candidates: None)
+        now = datetime.now(timezone.utc)
+        db = TestSessionLocal()
+        try:
+            old_email_match = crud.create_candidate(
+                db=db,
+                name="Duplicate Old Email",
+                email="bulk-duplicate@example.com",
+                phone="+233 24 000 0001",
+                skills=[],
+                experience=None,
+                education=None,
+                cv_text="old email duplicate",
+                category="Sales",
+                subcategory="Retail Sales",
+                confidence=0.8,
+                years_experience=1,
+                seniority_level="Junior",
+                source_filename="old-email.pdf",
+                saved_upload_filename=None,
+            )
+            newest = crud.create_candidate(
+                db=db,
+                name="Duplicate Newest",
+                email="bulk-duplicate@example.com",
+                phone="+233 24 000 0002",
+                skills=[],
+                experience=None,
+                education=None,
+                cv_text="newest duplicate",
+                category="Sales",
+                subcategory="Retail Sales",
+                confidence=0.9,
+                years_experience=2,
+                seniority_level="Mid",
+                source_filename="newest.pdf",
+                saved_upload_filename=None,
+            )
+            old_phone_match = crud.create_candidate(
+                db=db,
+                name="Duplicate Old Phone",
+                email="bulk-phone-only@example.com",
+                phone="+233 24 000 0002",
+                skills=[],
+                experience=None,
+                education=None,
+                cv_text="old phone duplicate",
+                category="Sales",
+                subcategory="Retail Sales",
+                confidence=0.7,
+                years_experience=1,
+                seniority_level="Junior",
+                source_filename="old-phone.pdf",
+                saved_upload_filename=None,
+            )
+
+            old_email_match.created_at = now - timedelta(days=2)
+            newest.created_at = now
+            old_phone_match.created_at = now - timedelta(days=1)
+            db.commit()
+            old_email_match_id = old_email_match.id
+            newest_id = newest.id
+            old_phone_match_id = old_phone_match.id
+
+            resp = client.delete("/api/v1/candidates/duplicates")
+            assert resp.status_code == 200
+            data = resp.json()
+
+            assert newest_id in data["kept_candidate_ids"]
+            assert old_email_match_id in data["deleted_candidate_ids"]
+            assert old_phone_match_id in data["deleted_candidate_ids"]
+            db.expire_all()
+            assert db.get(type(newest), newest_id) is not None
+            assert db.get(type(old_email_match), old_email_match_id) is None
+            assert db.get(type(old_phone_match), old_phone_match_id) is None
+        finally:
+            db.close()
 
 
 class TestPipeline:
